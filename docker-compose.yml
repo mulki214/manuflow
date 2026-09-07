@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-erp_manufaktur}
+      POSTGRES_USER: ${POSTGRES_USER:-erp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-erp_dev_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-erp} -d ${POSTGRES_DB:-erp_manufaktur}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://erp:erp_dev_password@db:5432/erp_manufaktur}
+      JWT_SECRET: ${JWT_SECRET:-development-only-secret-change-me}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
+      BUSINESS_TIMEZONE: ${BUSINESS_TIMEZONE:-Asia/Jakarta}
+      PURCHASING_DEPARTMENT_CODE: ${PURCHASING_DEPARTMENT_CODE:-PURCHASING}
+      SALES_DEPARTMENT_CODE: ${SALES_DEPARTMENT_CODE:-SALES}
+      WAREHOUSE_DEPARTMENT_CODE: ${WAREHOUSE_DEPARTMENT_CODE:-WAREHOUSE}
+      PRODUCTION_DEPARTMENT_CODE: ${PRODUCTION_DEPARTMENT_CODE:-PRODUCTION}
+      QUALITY_DEPARTMENT_CODE: ${QUALITY_DEPARTMENT_CODE:-QUALITY}
+      FIRST_ADMIN_EMAIL: ${FIRST_ADMIN_EMAIL:-admin@example.com}
+      FIRST_ADMIN_PASSWORD: ${FIRST_ADMIN_PASSWORD:-Admin123!}
+      FIRST_ADMIN_FIRST_NAME: ${FIRST_ADMIN_FIRST_NAME:-System}
+      FIRST_ADMIN_LAST_NAME: ${FIRST_ADMIN_LAST_NAME:-Administrator}
+      CORS_ORIGINS: '["http://localhost:3000","http://localhost:8080"]'
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["sh", "-c", "alembic upgrade head && python -m app.scripts.seed_admin && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+
+volumes:
+  postgres_data:
