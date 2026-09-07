@@ -1,6 +1,6 @@
 # Temporary Render deployment
 
-This deployment publishes only the FastAPI backend and PostgreSQL database.
+This deployment publishes the Flutter web frontend, FastAPI backend, and PostgreSQL database.
 It is intended for testing: Render's free database expires after 30 days and
 the free web service sleeps after inactivity.
 
@@ -11,10 +11,16 @@ the free web service sleeps after inactivity.
    `render.yaml`.
 3. Enter a strong value for `FIRST_ADMIN_PASSWORD` when prompted. Render
    generates `JWT_SECRET` and creates the database automatically.
-4. Wait for `manuflow-api` to finish its first deploy, then verify:
+4. Wait for `manuflow-api` and `manuflow-web` to finish their first deploy, then verify:
 
    ```text
    https://manuflow-api.onrender.com/health
+   ```
+
+   The web application is available at:
+
+   ```text
+   https://manuflow-web.onrender.com
    ```
 
 ## Copy local data after the cloud database exists

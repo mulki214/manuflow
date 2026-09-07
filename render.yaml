@@ -37,7 +37,19 @@ services:
       - key: FIRST_ADMIN_LAST_NAME
         value: Administrator
       - key: CORS_ORIGINS
-        value: '["http://localhost:3000","http://localhost:8080"]'
+        value: '["http://localhost:3000","http://localhost:8080","https://manuflow-web.onrender.com"]'
+
+  - type: web
+    name: manuflow-web
+    runtime: docker
+    region: singapore
+    plan: free
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    healthCheckPath: /
+    envVars:
+      - key: API_URL
+        value: https://manuflow-api.onrender.com/api/v1
 
 databases:
   - name: manuflow-db
