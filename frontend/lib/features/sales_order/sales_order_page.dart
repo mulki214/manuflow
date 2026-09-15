@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:file_saver/file_saver.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../core/api_client.dart';
 import '../../shared/app_sidebar.dart';
 import '../../shared/crud_widgets.dart';
 import '../../shared/module_navigation.dart';
+import '../../shared/product_qr_label_dialog.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
 import '../users/change_password_dialog.dart';
@@ -1093,7 +1093,7 @@ class _SalesOrderPageState extends State<SalesOrderPage> {
       children: [
         Text(label, style: const TextStyle(color: Color(0xFF667085))),
         const SizedBox(height: 6),
-        QrImageView(data: payload, size: 96),
+        QrPayloadImage(data: payload, size: 96),
         Text(name, style: const TextStyle(fontWeight: FontWeight.w700)),
       ],
     ),

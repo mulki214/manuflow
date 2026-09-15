@@ -301,18 +301,25 @@ class _FinishGoodPageState extends State<FinishGoodPage> {
                                       icon: const Icon(
                                         Icons.qr_code_2_outlined,
                                       ),
-                                      onPressed: () => showDialog<void>(
-                                        context: context,
-                                        builder: (_) => ProductQrLabelDialog(
-                                          productCode: item['product_code']
-                                              .toString(),
-                                          productName: item['product_name']
-                                              .toString(),
-                                          lotId: item['lot_id'] as int?,
-                                          lotNumber: item['lot_number']
-                                              .toString(),
-                                        ),
-                                      ),
+                                      onPressed: () =>
+                                          Navigator.of(context).push(
+                                            MaterialPageRoute<void>(
+                                              builder: (_) =>
+                                                  ProductQrLabelPage(
+                                                    productCode:
+                                                        item['product_code']
+                                                            .toString(),
+                                                    productName:
+                                                        item['product_name']
+                                                            .toString(),
+                                                    lotId:
+                                                        item['lot_id'] as int?,
+                                                    lotNumber:
+                                                        item['lot_number']
+                                                            .toString(),
+                                                  ),
+                                            ),
+                                          ),
                                     )
                                   : _tab == 'queue'
                                   ? FilledButton(
