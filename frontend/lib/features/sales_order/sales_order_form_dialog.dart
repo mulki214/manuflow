@@ -173,6 +173,7 @@ class _SalesOrderFormDialogState extends State<SalesOrderFormDialog> {
       'items': _items
           .map(
             (item) => {
+              'id': item.id,
               'product_code': item.productCode,
               'quantity_grams': double.parse(item.quantity.text),
               'unit': item.unit,
@@ -595,6 +596,7 @@ class _SalesOrderFormDialogState extends State<SalesOrderFormDialog> {
 
 class _SalesItemDraft {
   _SalesItemDraft({
+    this.id,
     this.productCode,
     String quantity = '',
     String price = '',
@@ -608,6 +610,7 @@ class _SalesItemDraft {
 
   factory _SalesItemDraft.fromModel(SalesOrderItemModel item) =>
       _SalesItemDraft(
+        id: item.id,
         productCode: item.productCode,
         quantity: item.quantityGrams.toString(),
         price: item.unitPrice.toString(),
@@ -617,6 +620,7 @@ class _SalesItemDraft {
       );
 
   String? productCode;
+  final int? id;
   String unit;
   final TextEditingController quantity;
   final TextEditingController price;

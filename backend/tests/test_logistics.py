@@ -120,3 +120,15 @@ def test_delivery_batch_rejects_duplicate_item_and_lot() -> None:
 
 def test_delivery_confirmation_accepts_optional_notes() -> None:
     assert DeliveryConfirm(notes="Received by customer").notes == "Received by customer"
+
+
+def test_delivery_batch_accepts_an_excess_reason() -> None:
+    batch = DeliveryBatchCreate.model_validate(
+        {
+            "delivery_date": "2026-08-21",
+            "driver_name": "Driver A",
+            "excess_reason": "Customer requested the additional stock",
+            "lines": [{"sales_order_item_id": 1, "lot_id": 5, "quantity": 1}],
+        }
+    )
+    assert batch.excess_reason == "Customer requested the additional stock"

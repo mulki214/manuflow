@@ -193,7 +193,7 @@ async def order_response(db: AsyncSession, order: SalesOrder, access: Department
         reviewed_by_name=reviewer_name,
         reviewed_at=order.reviewed_at,
         rejection_reason=order.rejection_reason,
-        can_edit=waiting,
+        can_edit=order.status != SalesOrderStatus.rejected,
         can_delete=waiting,
         can_review=waiting and access.can_review,
         creator_qr_payload=signed_document_payload(
@@ -229,6 +229,7 @@ async def apply_order_data(
             detail="Selected corporation is not a customer",
         )
 
+    existing_by_id = {item.id: item for item in order.items}
     new_items: list[SalesOrderItem] = []
     products_by_code: dict[str, Product] = {}
     amounts: list[Decimal] = []
@@ -247,8 +248,21 @@ async def apply_order_data(
         products_by_code[product.code] = product
         amount = calculate_sales_line_amount(item_data.quantity_grams, item_data.unit_price)
         amounts.append(amount)
-        new_items.append(
-            SalesOrderItem(
+        existing = existing_by_id.pop(item_data.id, None) if item_data.id else None
+        if item_data.id and not existing:
+            raise HTTPException(status_code=422, detail="Sales Order item does not belong to this order")
+        if existing:
+            if existing.product_code != product.code or existing.unit != item_data.unit.value:
+                raise HTTPException(status_code=422, detail="Product and unit cannot change on an existing SO line")
+            existing.line_number = line_number
+            existing.quantity_grams = item_data.quantity_grams
+            existing.unit_price = item_data.unit_price
+            existing.amount = amount
+            existing.remark = item_data.remark
+            existing.outstanding_note = item_data.outstanding_note
+            new_items.append(existing)
+        else:
+            item = SalesOrderItem(
                 line_number=line_number,
                 product_code=product.code,
                 part_name=product.part_name,
@@ -263,7 +277,7 @@ async def apply_order_data(
                 amount=amount,
                 remark=item_data.remark,
             )
-        )
+            new_items.append(item)
 
     total = calculate_sales_total(amounts)
     order.po_receipt_date = data.po_receipt_date
@@ -283,7 +297,16 @@ async def apply_order_data(
     order.currency = "IDR"
     order.subtotal = total
     order.grand_total = total
+    for removed in existing_by_id.values():
+        if removed.delivered_quantity > 0 or removed.material_received_quantity > 0:
+            raise HTTPException(status_code=422, detail="An SO line with transaction history cannot be removed")
+        await db.delete(removed)
     order.items = new_items
+    order.fulfillment_status = (
+        FulfillmentStatus.closed
+        if new_items and all(item.delivered_quantity >= item.quantity_grams for item in new_items)
+        else FulfillmentStatus.open
+    )
     db.add(order)
     await db.flush()
     bom_rows = list(
@@ -306,16 +329,36 @@ async def apply_order_data(
                 requirements = expand_bom_leaf_requirements(item.product_code, item.quantity_grams, bom_rows)
             except ValueError as exc:
                 raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
-        for material_product_code, required_quantity, unit in requirements:
-            db.add(
-                SalesOrderMaterialAllocation(
-                    sales_order_item_id=item.id,
-                    material_product_code=material_product_code,
-                    required_quantity=required_quantity,
-                    received_quantity=Decimal("0"),
-                    unit=unit,
+        existing_allocations = {
+            allocation.material_product_code: allocation
+            for allocation in (
+                await db.execute(
+                    select(SalesOrderMaterialAllocation).where(
+                        SalesOrderMaterialAllocation.sales_order_item_id == item.id
+                    )
                 )
-            )
+            ).scalars()
+        }
+        for material_product_code, required_quantity, unit in requirements:
+            allocation = existing_allocations.pop(material_product_code, None)
+            if allocation:
+                if allocation.unit != unit:
+                    raise HTTPException(status_code=422, detail="Material unit cannot change after SO creation")
+                allocation.required_quantity = required_quantity
+            else:
+                db.add(
+                    SalesOrderMaterialAllocation(
+                        sales_order_item_id=item.id,
+                        material_product_code=material_product_code,
+                        required_quantity=required_quantity,
+                        received_quantity=Decimal("0"),
+                        unit=unit,
+                    )
+                )
+        for allocation in existing_allocations.values():
+            if allocation.received_quantity > 0:
+                raise HTTPException(status_code=422, detail="A received SO material allocation cannot be removed")
+            await db.delete(allocation)
 
 
 async def commit_order(db: AsyncSession, order: SalesOrder) -> None:
@@ -456,9 +499,8 @@ async def update_sales_order(
 ) -> SalesOrderResponse:
     access = await current_access(db, current_user)
     order = await get_order(db, sales_order_number)
-    ensure_sales_waiting_review(order.status)
-    order.items.clear()
-    await db.flush()
+    if order.status == SalesOrderStatus.rejected:
+        raise HTTPException(status_code=409, detail="Rejected Sales Order cannot be edited")
     await apply_order_data(db, order, data)
     await commit_order(db, order)
     return await order_response(db, await get_order(db, sales_order_number), access)

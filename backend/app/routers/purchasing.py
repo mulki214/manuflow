@@ -124,7 +124,7 @@ async def order_response(db: AsyncSession, order: PurchaseOrder, access: Purchas
         reviewed_by_name=reviewer_name,
         reviewed_at=order.reviewed_at,
         rejection_reason=order.rejection_reason,
-        can_edit=waiting,
+        can_edit=order.status != PurchaseOrderStatus.rejected,
         can_delete=waiting,
         can_review=waiting and access.can_review,
         creator_qr_payload=signed_document_payload(
@@ -166,6 +166,7 @@ async def apply_order_data(
             detail="Selected plant does not exist",
         )
 
+    existing_by_id = {item.id: item for item in order.items}
     new_items: list[PurchaseOrderItem] = []
     amounts: list[Decimal] = []
     for line_number, item_data in enumerate(data.items, start=1):
@@ -182,8 +183,20 @@ async def apply_order_data(
             )
         amount = calculate_line_amount(item_data.quantity_grams, item_data.unit_price)
         amounts.append(amount)
-        new_items.append(
-            PurchaseOrderItem(
+        existing = existing_by_id.pop(item_data.id, None) if item_data.id else None
+        if item_data.id and not existing:
+            raise HTTPException(status_code=422, detail="Purchase Order item does not belong to this order")
+        if existing:
+            if existing.product_code != product.code or existing.unit != item_data.unit.value:
+                raise HTTPException(status_code=422, detail="Product and unit cannot change on an existing PO line")
+            existing.line_number = line_number
+            existing.quantity_grams = item_data.quantity_grams
+            existing.unit_price = item_data.unit_price
+            existing.amount = amount
+            existing.remark = item_data.remark
+            new_items.append(existing)
+        else:
+            new_items.append(PurchaseOrderItem(
                 line_number=line_number,
                 product_code=product.code,
                 part_name=product.part_name,
@@ -195,8 +208,12 @@ async def apply_order_data(
                 unit_price=item_data.unit_price,
                 amount=amount,
                 remark=item_data.remark,
-            )
-        )
+            ))
+
+    for removed in existing_by_id.values():
+        if removed.received_quantity > 0:
+            raise HTTPException(status_code=422, detail="A PO line with Receiving history cannot be removed")
+        await db.delete(removed)
 
     try:
         totals = calculate_purchase_totals(amounts, data.discount_amount, data.ppn_rate, data.pph23_rate)
@@ -227,6 +244,11 @@ async def apply_order_data(
     order.pph23_amount = totals.pph23_amount
     order.grand_total = totals.grand_total
     order.items = new_items
+    order.fulfillment_status = (
+        FulfillmentStatus.closed
+        if new_items and all(item.received_quantity >= item.quantity_grams for item in new_items)
+        else FulfillmentStatus.open
+    )
 
 
 async def commit_order(db: AsyncSession, order: PurchaseOrder) -> None:
@@ -347,9 +369,8 @@ async def update_purchase_order(
 ) -> PurchaseOrderResponse:
     access = await current_access(db, current_user)
     order = await get_order(db, po_number)
-    ensure_waiting_review(order.status)
-    order.items.clear()
-    await db.flush()
+    if order.status == PurchaseOrderStatus.rejected:
+        raise HTTPException(status_code=409, detail="Rejected Purchase Order cannot be edited")
     await apply_order_data(db, order, data)
     await commit_order(db, order)
     return await order_response(db, await get_order(db, po_number), access)
