@@ -10,6 +10,7 @@ ARG API_URL
 RUN flutter build web --release --dart-define=API_URL=${API_URL}
 
 FROM nginx:1.27-alpine
+ENV PORT=80
 ENV NGINX_ENVSUBST_FILTER=PORT
 COPY --from=build /app/build/web /usr/share/nginx/html
 COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
