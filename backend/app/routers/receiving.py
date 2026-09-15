@@ -229,8 +229,9 @@ async def list_receiving_source_items(
     if not corporation or incorrect_role:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Corporation not found")
     responses: list[ReceivingSourceItemResponse] = []
-    # A supplier receipt supplies material against customer demand (SO), while
-    # a customer receipt is reconciled against supplier demand (PO).
+    # A supplier receipt supplies a customer-provided SO input (a BOM material
+    # or the SO product itself for a multi-stage process), while a customer
+    # receipt is reconciled against supplier demand (PO).
     if source_type == ReceivingSourceType.supplier:
         rows = await db.execute(
             select(SalesOrderMaterialAllocation, SalesOrderItem, SalesOrder, Product)
