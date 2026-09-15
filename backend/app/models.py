@@ -73,6 +73,7 @@ class ProductCategory(str, enum.Enum):
     raw_material = "raw_material"
     work_in_progress = "work_in_progress"
     finished_good = "finished_good"
+    multi_stage_manufactured = "multi_stage_manufactured"
 
 
 class ProductSupplySource(str, enum.Enum):

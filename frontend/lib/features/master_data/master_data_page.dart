@@ -212,7 +212,8 @@ class _MasterDataPageState extends State<MasterDataPage>
             ),
           if (_type == MasterDataType.product &&
               (record.data['category'] == 'finished_good' ||
-                  record.data['category'] == 'work_in_progress'))
+                  record.data['category'] == 'work_in_progress' ||
+                  record.data['category'] == 'multi_stage_manufactured'))
             OutlinedButton.icon(
               onPressed: record.canEdit
                   ? () async {

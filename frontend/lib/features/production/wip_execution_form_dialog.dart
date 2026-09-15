@@ -46,6 +46,12 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
   bool _saving = false;
   String? _error;
 
+  bool get _isMultiStageProduct => _products.any(
+    (product) =>
+        product['code']?.toString() == widget.job.productCode &&
+        product['category']?.toString() == 'multi_stage_manufactured',
+  );
+
   @override
   void initState() {
     super.initState();
@@ -146,29 +152,35 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
       _error = null;
     });
     try {
-      await widget.api
-          .postJson('/production/wip-jobs/${widget.job.id}/complete', {
-            'process_date': _apiDate(_date),
-            'shift': _shift,
-            'started_at': _dateTime(_date, _startTime.text),
-            'ended_at': _dateTime(_date, _endTime.text),
-            'break_duration_minutes': int.tryParse(_breakMinutes.text) ?? 0,
-            'observed_cycle_time_seconds': double.tryParse(_observedCycle.text),
-            'ng_override_reason': _ngOverrideReason.text.trim().isEmpty
-                ? null
-                : _ngOverrideReason.text.trim(),
-            'processing_quantity': processing,
-            'good_quantity': good,
-            'repair_quantity': repair,
-            'ng_quantity': ng,
-            'next_process_code': good > 0 ? _nextProcess : null,
-            'repair_process_code': repair > 0 ? _repairProcess : null,
-            'repair_route_code': repair > 0 ? _repairRoute : null,
-            'output_product_code': good > 0 ? _outputProduct : null,
-            'output_unit': good > 0 ? _outputUnit : null,
-            'machine_code': _machine,
-            'notes': _notes.text.trim(),
-          });
+      await widget.api.postJson(
+        '/production/wip-jobs/${widget.job.id}/complete',
+        {
+          'process_date': _apiDate(_date),
+          'shift': _shift,
+          'started_at': _dateTime(_date, _startTime.text),
+          'ended_at': _dateTime(_date, _endTime.text),
+          'break_duration_minutes': int.tryParse(_breakMinutes.text) ?? 0,
+          'observed_cycle_time_seconds': double.tryParse(_observedCycle.text),
+          'ng_override_reason': _ngOverrideReason.text.trim().isEmpty
+              ? null
+              : _ngOverrideReason.text.trim(),
+          'processing_quantity': processing,
+          'good_quantity': good,
+          'repair_quantity': repair,
+          'ng_quantity': ng,
+          'next_process_code': good > 0 ? _nextProcess : null,
+          'repair_process_code': repair > 0 ? _repairProcess : null,
+          'repair_route_code': repair > 0 ? _repairRoute : null,
+          'output_product_code': good > 0
+              ? (_isMultiStageProduct ? widget.job.productCode : _outputProduct)
+              : null,
+          'output_unit': good > 0
+              ? (_isMultiStageProduct ? widget.job.unit : _outputUnit)
+              : null,
+          'machine_code': _machine,
+          'notes': _notes.text.trim(),
+        },
+      );
       if (mounted) Navigator.pop(context, true);
     } on ApiException catch (exception) {
       if (mounted) setState(() => _error = exception.message);
@@ -484,42 +496,51 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
                       onChanged: (value) => setState(() => _machine = value),
                     ),
                     const SizedBox(height: 14),
-                    DropdownButtonFormField<String>(
-                      initialValue: _outputProduct,
-                      decoration: const InputDecoration(
-                        labelText: 'Good Output Product',
+                    if (_isMultiStageProduct) ...[
+                      Text(
+                        'Output stays ${widget.job.productCode} in ${unitLabel(widget.job.unit)}. '
+                        'Its stage changes through WIP, QC, and Finished Goods.',
                       ),
-                      isExpanded: true,
-                      items: _products
-                          .map(
-                            (item) => DropdownMenuItem(
-                              value: item['code'].toString(),
-                              child: Text(
-                                '${item['code']} — ${item['description']}',
+                      const SizedBox(height: 14),
+                    ] else ...[
+                      DropdownButtonFormField<String>(
+                        initialValue: _outputProduct,
+                        decoration: const InputDecoration(
+                          labelText: 'Good Output Product',
+                        ),
+                        isExpanded: true,
+                        items: _products
+                            .map(
+                              (item) => DropdownMenuItem(
+                                value: item['code'].toString(),
+                                child: Text(
+                                  '${item['code']} — ${item['description']}',
+                                ),
                               ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) =>
-                          setState(() => _outputProduct = value),
-                    ),
-                    const SizedBox(height: 14),
-                    DropdownButtonFormField<String>(
-                      initialValue: _outputUnit,
-                      decoration: const InputDecoration(
-                        labelText: 'Good Output Unit',
+                            )
+                            .toList(),
+                        onChanged: (value) =>
+                            setState(() => _outputProduct = value),
                       ),
-                      items: inventoryUnits
-                          .map(
-                            (unit) => DropdownMenuItem(
-                              value: unit,
-                              child: Text(unitLabel(unit)),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) => setState(() => _outputUnit = value),
-                    ),
-                    const SizedBox(height: 14),
+                      const SizedBox(height: 14),
+                      DropdownButtonFormField<String>(
+                        initialValue: _outputUnit,
+                        decoration: const InputDecoration(
+                          labelText: 'Good Output Unit',
+                        ),
+                        items: inventoryUnits
+                            .map(
+                              (unit) => DropdownMenuItem(
+                                value: unit,
+                                child: Text(unitLabel(unit)),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) =>
+                            setState(() => _outputUnit = value),
+                      ),
+                      const SizedBox(height: 14),
+                    ],
                     TextFormField(
                       controller: _ngOverrideReason,
                       minLines: 2,
