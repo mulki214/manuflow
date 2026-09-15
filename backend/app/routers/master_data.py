@@ -292,10 +292,14 @@ async def replace_product_bom(
     product = await db.get(Product, product_code)
     if not product:
         raise not_found("Product")
-    if product.category not in {ProductCategory.work_in_progress, ProductCategory.finished_good}:
+    if product.category not in {
+        ProductCategory.work_in_progress,
+        ProductCategory.finished_good,
+        ProductCategory.multi_stage_manufactured,
+    }:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="BOM can only be configured for a Work In Progress or Finished Good",
+            detail="BOM can only be configured for a Work In Progress, Finished Good, or Multi-stage Manufactured Product",
         )
     ensure_can_manage(current_user, product.department_code)
     for item in data.items:

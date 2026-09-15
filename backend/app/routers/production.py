@@ -18,6 +18,7 @@ from app.models import (
     Machine,
     Plant,
     Product,
+    ProductCategory,
     ProductionExecution,
     ProductLot,
     ProductProcessStandard,
@@ -618,10 +619,24 @@ async def complete_wip_job(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Machine must belong to the same Plant"
         )
-    output_product = await db.get(Product, data.output_product_code) if data.output_product_code else product
+    if product.category == ProductCategory.multi_stage_manufactured:
+        if data.output_product_code and data.output_product_code != job.product_code:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Multi-stage Manufactured Product must keep the same Output Product",
+            )
+        if data.output_unit and data.output_unit != job.unit:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Multi-stage Manufactured Product must keep the same Output Unit",
+            )
+        output_product = product
+        output_unit = job.unit
+    else:
+        output_product = await db.get(Product, data.output_product_code) if data.output_product_code else product
+        output_unit = data.output_unit or job.unit
     if good > 0 and not output_product:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Output Product not found")
-    output_unit = data.output_unit or job.unit
     repair_route = await db.get(RepairRoute, data.repair_route_code) if data.repair_route_code else None
     repair_step = None
     if repair > 0 and repair_route:

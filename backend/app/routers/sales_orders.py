@@ -22,6 +22,7 @@ from app.models import (
     FinishGoodStatus,
     FulfillmentStatus,
     Product,
+    ProductCategory,
     SalesOrder,
     SalesOrderItem,
     SalesOrderMaterialAllocation,
@@ -229,6 +230,7 @@ async def apply_order_data(
         )
 
     new_items: list[SalesOrderItem] = []
+    products_by_code: dict[str, Product] = {}
     amounts: list[Decimal] = []
     for line_number, item_data in enumerate(data.items, start=1):
         product = await db.get(Product, item_data.product_code)
@@ -242,6 +244,7 @@ async def apply_order_data(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Product {product.code} is not registered for customer {customer.code}",
             )
+        products_by_code[product.code] = product
         amount = calculate_sales_line_amount(item_data.quantity_grams, item_data.unit_price)
         amounts.append(amount)
         new_items.append(
@@ -293,10 +296,16 @@ async def apply_order_data(
         .all()
     )
     for item in new_items:
-        try:
-            requirements = expand_bom_leaf_requirements(item.product_code, item.quantity_grams, bom_rows)
-        except ValueError as exc:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        product = products_by_code[item.product_code]
+        if product.category == ProductCategory.multi_stage_manufactured:
+            # In a customer-supplied, multi-stage process the customer sends
+            # the SO product itself. It must not be expanded into BOM leaves.
+            requirements = [(item.product_code, item.quantity_grams, item.unit)]
+        else:
+            try:
+                requirements = expand_bom_leaf_requirements(item.product_code, item.quantity_grams, bom_rows)
+            except ValueError as exc:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
         for material_product_code, required_quantity, unit in requirements:
             db.add(
                 SalesOrderMaterialAllocation(

@@ -403,6 +403,8 @@ class _MasterDataFormDialogState extends State<MasterDataFormDialog> {
                     'raw_material': 'Raw Material',
                     'work_in_progress': 'Work In Progress',
                     'finished_good': 'Finished Good',
+                    'multi_stage_manufactured':
+                        'Multi-stage Manufactured Product',
                   }.entries
                   .map(
                     (entry) => DropdownMenuItem(

@@ -450,7 +450,7 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
                   initialValue: _sourceItemId,
                   decoration: InputDecoration(
                     labelText: _documentType == 'sales_order'
-                        ? 'Outstanding SO Material Item *'
+                        ? 'Outstanding SO Receiving Item *'
                         : 'Outstanding PO Item *',
                   ),
                   isExpanded: true,

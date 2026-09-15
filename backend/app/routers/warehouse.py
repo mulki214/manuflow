@@ -92,7 +92,12 @@ async def transfer_response(
     db: AsyncSession, record: WarehouseMaterialTransfer, access: DepartmentModuleAccess
 ) -> WarehouseMaterialTransferResponse:
     job = (
-        await db.execute(select(WipLotJob).where(WipLotJob.source_transfer_number == record.transfer_number))
+        await db.execute(
+            select(WipLotJob).where(
+                WipLotJob.source_transfer_number == record.transfer_number,
+                WipLotJob.parent_job_id.is_(None),
+            )
+        )
     ).scalar_one_or_none()
     reverser = await db.get(User, record.reversed_by) if record.reversed_by else None
     target_untouched = True
@@ -532,7 +537,12 @@ async def reverse_transfer(
     if record.destination_type == WarehouseDestinationType.wip:
         job = (
             await db.execute(
-                select(WipLotJob).where(WipLotJob.source_transfer_number == transfer_number).with_for_update()
+                select(WipLotJob)
+                .where(
+                    WipLotJob.source_transfer_number == transfer_number,
+                    WipLotJob.parent_job_id.is_(None),
+                )
+                .with_for_update()
             )
         ).scalar_one()
         ensure_wip_job_reversible(job.status, job.current_quantity, job.input_quantity)
