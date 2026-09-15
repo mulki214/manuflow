@@ -461,12 +461,13 @@ async def create_delivery_batch_record(
         ).all()
     )
     pending_by_item = {item_id: Decimal(str(quantity)) for item_id, quantity in pending_rows}
-    if any(
+    has_excess = any(
         quantity_by_item[item.id]
         > grams(item.quantity_grams - item.delivered_quantity - pending_by_item.get(item.id, Decimal("0")))
         for item in items
-    ):
-        raise HTTPException(status_code=422, detail="Delivery quantity exceeds Sales Order outstanding")
+    )
+    if has_excess and not data.excess_reason:
+        raise HTTPException(status_code=422, detail="Excess Delivery Reason is required when Delivery exceeds the Sales Order")
     if any(inventory_by_lot[lot.id] > lot.current_quantity_grams for lot in lots):
         raise HTTPException(status_code=422, detail="Delivery quantity exceeds Finish Good stock")
 
@@ -519,7 +520,11 @@ async def create_delivery_batch_record(
         vehicle_number=transportation.vehicle_number if transportation else None,
         transportation_code=transportation.code if transportation else None,
         driver_name=data.driver_name,
-        notes=data.notes,
+        notes=(
+            f"{data.notes}\nExcess Delivery Reason: {data.excess_reason}".strip()
+            if has_excess
+            else data.notes
+        ),
         status=DeliveryStatus.dispatched,
         performed_by=current_user.id,
     )
@@ -559,6 +564,7 @@ async def create_delivery(
         transportation_code=data.transportation_code,
         driver_name=data.driver_name,
         notes=data.notes,
+        excess_reason=data.excess_reason,
         lines=[{"sales_order_item_id": data.sales_order_item_id, "lot_id": data.lot_id, "quantity": data.quantity}],
     )
     record, lines = await create_delivery_batch_record(batch, db, current_user)
@@ -628,7 +634,6 @@ async def delivery_sales_order_items(
                 .join(SalesOrder, SalesOrder.sales_order_number == SalesOrderItem.sales_order_number)
                 .where(
                     SalesOrder.status == "approved",
-                    SalesOrderItem.delivered_quantity < SalesOrderItem.quantity_grams,
                 )
                 .order_by(SalesOrder.po_receipt_date.desc(), SalesOrderItem.id)
             )
@@ -838,7 +843,15 @@ async def reverse_delivery(
         if record.status in {DeliveryStatus.delivered, DeliveryStatus.posted}:
             item.delivered_quantity = grams(item.delivered_quantity - line.quantity)
     if record.status in {DeliveryStatus.delivered, DeliveryStatus.posted}:
-        order.fulfillment_status = FulfillmentStatus.open
+        open_items = await db.scalar(
+            select(func.count())
+            .select_from(SalesOrderItem)
+            .where(
+                SalesOrderItem.sales_order_number == order.sales_order_number,
+                SalesOrderItem.delivered_quantity < SalesOrderItem.quantity_grams,
+            )
+        )
+        order.fulfillment_status = FulfillmentStatus.closed if open_items == 0 else FulfillmentStatus.open
     record.status = DeliveryStatus.reversed
     record.reversed_by = current_user.id
     record.reversal_reason = data.reason.strip()

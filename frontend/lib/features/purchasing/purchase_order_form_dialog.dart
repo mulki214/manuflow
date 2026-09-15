@@ -182,6 +182,7 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
       'items': _items
           .map(
             (item) => {
+              'id': item.id,
               'product_code': item.productCode,
               'quantity_grams': double.parse(item.quantity.text),
               'unit': item.unit,
@@ -618,6 +619,7 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
 
 class _OrderItemDraft {
   _OrderItemDraft({
+    this.id,
     this.productCode,
     String quantity = '',
     String price = '',
@@ -629,6 +631,7 @@ class _OrderItemDraft {
 
   factory _OrderItemDraft.fromModel(PurchaseOrderItemModel item) {
     return _OrderItemDraft(
+      id: item.id,
       productCode: item.productCode,
       quantity: item.quantityGrams.toString(),
       price: item.unitPrice.toString(),
@@ -638,6 +641,7 @@ class _OrderItemDraft {
   }
 
   String? productCode;
+  final int? id;
   String unit;
   final TextEditingController quantity;
   final TextEditingController price;

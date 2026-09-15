@@ -242,7 +242,6 @@ async def list_receiving_source_items(
                 SalesOrder.status == SalesOrderStatus.approved,
                 Product.supplier_code == source_code,
                 Product.supply_source == ProductSupplySource.external_supplier,
-                SalesOrderMaterialAllocation.received_quantity < SalesOrderMaterialAllocation.required_quantity,
             )
         )
         if customer_code:
@@ -256,7 +255,6 @@ async def list_receiving_source_items(
                     SalesOrder.customer_code == customer_code,
                     Product.supplier_code == source_code,
                     Product.supply_source == ProductSupplySource.external_supplier,
-                    SalesOrderMaterialAllocation.received_quantity < SalesOrderMaterialAllocation.required_quantity,
                 )
             )
         for allocation, _item, order, product in rows.all():
@@ -271,7 +269,7 @@ async def list_receiving_source_items(
                     product_description=product.description,
                     ordered_quantity=allocation.required_quantity,
                     received_quantity=allocation.received_quantity,
-                    outstanding_quantity=allocation.required_quantity - allocation.received_quantity,
+                    outstanding_quantity=max(allocation.required_quantity - allocation.received_quantity, Decimal("0")),
                     unit=allocation.unit,
                 )
             )
@@ -287,11 +285,9 @@ async def list_receiving_source_items(
             .join(Product, Product.code == PurchaseOrderItem.product_code)
             .where(
                 PurchaseOrder.status == PurchaseOrderStatus.approved,
-                PurchaseOrder.fulfillment_status == FulfillmentStatus.open,
                 po_source_filter,
                 Product.supplier_code == PurchaseOrder.supplier_code,
                 Product.supply_source == ProductSupplySource.external_supplier,
-                PurchaseOrderItem.received_quantity < PurchaseOrderItem.quantity_grams,
             )
         )
         for item, order in rows.all():
@@ -306,7 +302,7 @@ async def list_receiving_source_items(
                     product_description=item.description,
                     ordered_quantity=item.quantity_grams,
                     received_quantity=item.received_quantity,
-                    outstanding_quantity=item.quantity_grams - item.received_quantity,
+                    outstanding_quantity=max(item.quantity_grams - item.received_quantity, Decimal("0")),
                     unit=item.unit,
                 )
             )
@@ -417,11 +413,6 @@ async def create_receiving(
         require_whole_quantity(document_quantity, unit)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
-    if document_quantity > outstanding:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Receiving quantity exceeds outstanding quantity ({outstanding} {unit})",
-        )
     quantity = to_inventory_quantity(document_quantity, unit)
     stock_unit = inventory_unit(unit)
     product = (await db.execute(select(Product).where(Product.code == product_code).with_for_update())).scalar_one()

@@ -361,6 +361,7 @@ class ModuleAccessResponse(BaseModel):
 
 
 class PurchaseOrderItemInput(BaseModel):
+    id: int | None = Field(default=None, gt=0)
     product_code: str = Field(min_length=1, max_length=15)
     quantity_grams: Decimal = Field(gt=0, decimal_places=3)
     unit: UnitOfMeasure = UnitOfMeasure.pcs
@@ -503,6 +504,7 @@ class PurchaseOrderRejection(BaseModel):
 
 
 class SalesOrderItemInput(BaseModel):
+    id: int | None = Field(default=None, gt=0)
     product_code: str = Field(min_length=1, max_length=15)
     quantity_grams: Decimal = Field(gt=0, decimal_places=3)
     unit: UnitOfMeasure = UnitOfMeasure.pcs
@@ -1316,6 +1318,7 @@ class DeliveryCreate(BaseModel):
     transportation_code: str | None = Field(default=None, max_length=15)
     driver_name: str = Field(min_length=1, max_length=150)
     notes: str = Field(default="", max_length=2000)
+    excess_reason: str | None = Field(default=None, min_length=3, max_length=2000)
 
 
 class DeliveryLineCreate(BaseModel):
@@ -1329,6 +1332,7 @@ class DeliveryBatchCreate(BaseModel):
     transportation_code: str | None = Field(default=None, max_length=15)
     driver_name: str = Field(min_length=1, max_length=150)
     notes: str = Field(default="", max_length=2000)
+    excess_reason: str | None = Field(default=None, min_length=3, max_length=2000)
     lines: list[DeliveryLineCreate] = Field(min_length=1)
 
     @model_validator(mode="after")

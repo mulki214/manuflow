@@ -318,6 +318,7 @@ class DeliveryFormDialog extends StatefulWidget {
 class _DeliveryFormDialogState extends State<DeliveryFormDialog> {
   final _driver = TextEditingController();
   final _notes = TextEditingController();
+  final _excessReason = TextEditingController();
   final List<_DeliveryLineDraft> _lines = [];
   List<Map<String, dynamic>> _items = [];
   List<Map<String, dynamic>> _transportations = [];
@@ -394,6 +395,7 @@ class _DeliveryFormDialogState extends State<DeliveryFormDialog> {
   void dispose() {
     _driver.dispose();
     _notes.dispose();
+    _excessReason.dispose();
     for (final line in _lines) {
       line.dispose();
     }
@@ -504,6 +506,9 @@ class _DeliveryFormDialogState extends State<DeliveryFormDialog> {
         'transportation_code': _transportationCode,
         'driver_name': _driver.text.trim(),
         'notes': _notes.text.trim(),
+        'excess_reason': _excessReason.text.trim().isEmpty
+            ? null
+            : _excessReason.text.trim(),
         'lines': _lines
             .map(
               (line) => {
@@ -623,6 +628,14 @@ class _DeliveryFormDialogState extends State<DeliveryFormDialog> {
                     controller: _notes,
                     maxLines: 2,
                     decoration: const InputDecoration(labelText: 'Notes'),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _excessReason,
+                    maxLines: 2,
+                    decoration: const InputDecoration(
+                      labelText: 'Excess Delivery Reason (required if over SO)',
+                    ),
                   ),
                   if (_error != null) ...[
                     const SizedBox(height: 14),

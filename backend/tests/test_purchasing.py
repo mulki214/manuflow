@@ -53,6 +53,7 @@ def valid_order_data() -> dict:
             {
                 "product_code": "PRD",
                 "quantity_grams": Decimal("1250.500"),
+                "unit": "gram",
                 "unit_price": Decimal("2.2500"),
             }
         ],
@@ -149,6 +150,8 @@ def test_purchase_order_item_accepts_supported_inventory_units() -> None:
     for unit in ("pcs", "bar", "liter", "pail", "kg", "gram"):
         data = valid_order_data()
         data["items"][0]["unit"] = unit
+        if unit in {"pcs", "bar", "pail"}:
+            data["items"][0]["quantity_grams"] = Decimal("1250")
         assert PurchaseOrderCreate(**data).items[0].unit.value == unit
 
 
