@@ -24,6 +24,7 @@ from app.models import (
     WipProcessType,
     WorkflowStatus,
 )
+from app.operational_services import require_whole_quantity
 
 
 class LoginRequest(BaseModel):
@@ -267,6 +268,11 @@ class BomItemInput(BaseModel):
     material_product_code: str = Field(min_length=1, max_length=15)
     quantity: Decimal = Field(gt=0, decimal_places=3)
     unit: UnitOfMeasure
+
+    @model_validator(mode="after")
+    def validate_whole_quantity(self) -> "BomItemInput":
+        require_whole_quantity(self.quantity, self.unit.value, "BOM Quantity")
+        return self
 
 
 class BillOfMaterialItemResponse(BomItemInput):
@@ -1006,6 +1012,21 @@ class ProductProcessStandardCreate(BaseModel):
     maximum_ng_quantity: Decimal | None = Field(default=None, ge=0, decimal_places=3)
     maximum_ng_percent: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=4)
     is_active: bool = True
+
+    @model_validator(mode="after")
+    def validate_whole_quantities(self) -> "ProductProcessStandardCreate":
+        require_whole_quantity(
+            self.expected_output_quantity,
+            self.output_unit.value,
+            "Expected Output Quantity",
+        )
+        if self.maximum_ng_quantity is not None:
+            require_whole_quantity(
+                self.maximum_ng_quantity,
+                self.output_unit.value,
+                "Maximum NG Quantity",
+            )
+        return self
 
 
 class ConsumableDispositionCreate(BaseModel):

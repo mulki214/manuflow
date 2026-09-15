@@ -97,6 +97,18 @@ class _ProductionSettingsDialogState extends State<ProductionSettingsDialog>
       );
       return;
     }
+    for (final controller in [_expectedOutput, _maxNgQty]) {
+      if (controller.text.trim().isEmpty && controller == _maxNgQty) continue;
+      final error = quantityValidationError(
+        controller.text,
+        _unit,
+        allowZero: controller == _maxNgQty,
+      );
+      if (error != null) {
+        setState(() => _error = error);
+        return;
+      }
+    }
     await _submit('/production/standards', {
       'product_code': _product,
       'process_code': _process,
@@ -215,7 +227,11 @@ class _ProductionSettingsDialogState extends State<ProductionSettingsDialog>
       optional: true,
     ),
     _field(_workingHours, 'Working Hours'),
-    _field(_expectedOutput, 'Expected Product Output'),
+    _field(
+      _expectedOutput,
+      'Expected Product Output',
+      quantityForOutputUnit: true,
+    ),
     DropdownButtonFormField<String>(
       initialValue: _unit,
       decoration: const InputDecoration(labelText: 'Output Unit'),
@@ -228,7 +244,12 @@ class _ProductionSettingsDialogState extends State<ProductionSettingsDialog>
       onChanged: (value) => setState(() => _unit = value ?? 'pcs'),
     ),
     _field(_cycle, 'Target Cycle Time (seconds)', optional: true),
-    _field(_maxNgQty, 'Maximum NG Quantity', optional: true),
+    _field(
+      _maxNgQty,
+      'Maximum NG Quantity',
+      optional: true,
+      quantityForOutputUnit: true,
+    ),
     _field(_maxNgPercent, 'Maximum NG Percent', optional: true),
   ], _saveStandard);
 
@@ -296,10 +317,13 @@ class _ProductionSettingsDialogState extends State<ProductionSettingsDialog>
     String label, {
     bool optional = false,
     bool numeric = true,
+    bool quantityForOutputUnit = false,
   }) => TextField(
     controller: controller,
     keyboardType: numeric
-        ? const TextInputType.numberWithOptions(decimal: true)
+        ? TextInputType.numberWithOptions(
+            decimal: !quantityForOutputUnit || !isDiscreteUnit(_unit),
+          )
         : null,
     decoration: InputDecoration(labelText: '$label${optional ? '' : ' *'}'),
   );

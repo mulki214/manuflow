@@ -222,8 +222,8 @@ class _WarehouseTransferFormDialogState
                     const SizedBox(height: 14),
                     TextFormField(
                       controller: _quantity,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
+                      keyboardType: TextInputType.numberWithOptions(
+                        decimal: !isDiscreteUnit(_lot?.unit ?? ''),
                       ),
                       decoration: InputDecoration(
                         labelText: 'Quantity (${_lot?.unit ?? '-'}) *',
@@ -233,6 +233,11 @@ class _WarehouseTransferFormDialogState
                         if (parsed == null || parsed <= 0) {
                           return 'Enter a valid Quantity';
                         }
+                        final unitError = quantityValidationError(
+                          value,
+                          _lot?.unit ?? '',
+                        );
+                        if (unitError != null) return unitError;
                         if (_lot != null && parsed > _lot!.quantity) {
                           return 'Quantity exceeds available stock';
                         }

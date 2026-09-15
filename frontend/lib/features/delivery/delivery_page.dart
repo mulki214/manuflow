@@ -484,6 +484,16 @@ class _DeliveryFormDialogState extends State<DeliveryFormDialog> {
       );
       return;
     }
+    for (final line in _lines) {
+      final error = quantityValidationError(
+        line.quantityController.text,
+        line.item!['unit'].toString(),
+      );
+      if (error != null) {
+        setState(() => _error = error);
+        return;
+      }
+    }
     setState(() {
       _saving = true;
       _error = null;
@@ -729,7 +739,9 @@ class _DeliveryLineEditor extends StatelessWidget {
           const SizedBox(height: 10),
           TextField(
             controller: line.quantityController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            keyboardType: TextInputType.numberWithOptions(
+              decimal: !isDiscreteUnit(line.item?['unit'].toString() ?? ''),
+            ),
             onChanged: (_) => onChanged(),
             decoration: InputDecoration(
               labelText: 'Delivery Quantity *',

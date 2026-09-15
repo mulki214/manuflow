@@ -565,7 +565,15 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
                 ),
                 SizedBox(
                   width: 180,
-                  child: _numberField(item.quantity, 'Quantity'),
+                  child: TextFormField(
+                    controller: item.quantity,
+                    keyboardType: TextInputType.numberWithOptions(
+                      decimal: !isDiscreteUnit(item.unit),
+                    ),
+                    decoration: const InputDecoration(labelText: 'Quantity'),
+                    validator: (value) =>
+                        quantityValidationError(value, item.unit),
+                  ),
                 ),
                 SizedBox(
                   width: 150,

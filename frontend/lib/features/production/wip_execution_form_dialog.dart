@@ -338,8 +338,8 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
                     const SizedBox(height: 14),
                     TextFormField(
                       controller: _processing,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
+                      keyboardType: TextInputType.numberWithOptions(
+                        decimal: !isDiscreteUnit(widget.job.unit),
                       ),
                       decoration: InputDecoration(
                         labelText:
@@ -350,6 +350,11 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
                         if (parsed == null || parsed <= 0) {
                           return 'Enter a valid Quantity';
                         }
+                        final unitError = quantityValidationError(
+                          value,
+                          widget.job.unit,
+                        );
+                        if (unitError != null) return unitError;
                         if (parsed > widget.job.currentQuantity) {
                           return 'Quantity exceeds available WIP';
                         }
@@ -572,12 +577,12 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
     width: 220,
     child: TextFormField(
       controller: controller,
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      keyboardType: TextInputType.numberWithOptions(
+        decimal: !isDiscreteUnit(unit),
+      ),
       decoration: InputDecoration(labelText: '$label ($unit) *'),
-      validator: (value) {
-        final parsed = double.tryParse(value ?? '');
-        return parsed == null || parsed < 0 ? 'Enter zero or greater' : null;
-      },
+      validator: (value) =>
+          quantityValidationError(value, unit, allowZero: true),
     ),
   );
 

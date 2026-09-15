@@ -14,6 +14,7 @@ from app.production_services import (
     validate_execution_quantities,
 )
 from app.routers.production import ensure_production_process_type
+from app.schemas import ProductProcessStandardCreate
 
 
 def test_production_middleware_path_match_is_segment_safe() -> None:
@@ -58,3 +59,14 @@ def test_production_reverse_rejects_used_output_or_consumables() -> None:
         ensure_production_execution_reversible(1, True, False)
     with pytest.raises(ValueError, match="consumables"):
         ensure_production_execution_reversible(1, False, True)
+
+
+def test_process_standard_rejects_fractional_discrete_output() -> None:
+    with pytest.raises(ValueError, match="whole number"):
+        ProductProcessStandardCreate(
+            product_code="MAT-001",
+            process_code="OP1",
+            working_hours="1",
+            expected_output_quantity="1.5",
+            output_unit="pcs",
+        )
