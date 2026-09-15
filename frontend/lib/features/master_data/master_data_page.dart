@@ -348,10 +348,6 @@ class _MasterDataPageState extends State<MasterDataPage>
         if (!desktop) {
           return Scaffold(
             appBar: AppBar(
-              leading: IconButton(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.arrow_back),
-              ),
               title: const Text(
                 'Master Data',
                 style: TextStyle(fontWeight: FontWeight.w700),
@@ -366,6 +362,19 @@ class _MasterDataPageState extends State<MasterDataPage>
                   icon: const Icon(Icons.logout),
                 ),
               ],
+            ),
+            drawer: Drawer(
+              child: AppSidebar(
+                auth: widget.auth,
+                activeModule: AppModule.masterData,
+                onModuleSelected: (module) => navigateToModule(
+                  context,
+                  widget.auth,
+                  module,
+                  activeModule: AppModule.masterData,
+                ),
+                onChangePassword: _changePassword,
+              ),
             ),
             body: content,
             floatingActionButton: _isUserTab

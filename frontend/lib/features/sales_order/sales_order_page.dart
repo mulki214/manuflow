@@ -334,7 +334,6 @@ class _SalesOrderPageState extends State<SalesOrderPage> {
                 style: TextStyle(fontWeight: FontWeight.w700),
               ),
               actions: [
-                IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
                 IconButton(
                   onPressed: widget.auth.logout,
                   icon: const Icon(Icons.logout),
@@ -408,78 +407,217 @@ class _SalesOrderPageState extends State<SalesOrderPage> {
     ),
   );
 
-  Widget _content(bool desktop) => SafeArea(
-    child: Padding(
-      padding: EdgeInsets.all(desktop ? 32 : 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _content(bool desktop) {
+    if (!desktop) return _mobileContent();
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.all(desktop ? 32 : 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Sales Orders',
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '$_total Sales Orders • quantities follow each selected unit',
+                        style: const TextStyle(color: Color(0xFF667085)),
+                      ),
+                    ],
+                  ),
+                ),
+                if (desktop)
+                  FilledButton.icon(
+                    onPressed: _openForm,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Create SO'),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                _summaryCard('Total Orders', '$_total', desktop),
+                _summaryCard(
+                  'Outstanding Orders',
+                  '$_outstandingOrder',
+                  desktop,
+                ),
+                _summaryCard(
+                  'Total Material',
+                  _unitMap(_totalMaterial),
+                  desktop,
+                ),
+                _summaryCard(
+                  'Outstanding Material',
+                  _unitMap(_outstandingMaterial),
+                  desktop,
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
                   children: [
-                    Text(
-                      'Sales Orders',
-                      style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(fontWeight: FontWeight.w700),
+                    SizedBox(
+                      width: desktop ? 420 : double.infinity,
+                      child: TextField(
+                        controller: _search,
+                        onSubmitted: (_) {
+                          _page = 1;
+                          _load();
+                        },
+                        decoration: const InputDecoration(
+                          hintText: 'Search SO, customer PO, or customer...',
+                          prefixIcon: Icon(Icons.search),
+                          isDense: true,
+                        ),
+                      ),
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '$_total Sales Orders • quantities follow each selected unit',
-                      style: const TextStyle(color: Color(0xFF667085)),
+                    FilterChip(
+                      label: const Text('Outstanding Orders'),
+                      selected: _outstandingOnly,
+                      onSelected: (value) {
+                        setState(() {
+                          _outstandingOnly = value;
+                          _page = 1;
+                        });
+                        _load();
+                      },
+                    ),
+                    SizedBox(
+                      width: 180,
+                      child: DropdownButtonFormField<String?>(
+                        initialValue: _statusFilter,
+                        decoration: const InputDecoration(
+                          labelText: 'Status',
+                          isDense: true,
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: null,
+                            child: Text('All Statuses'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'waiting_review',
+                            child: Text('Waiting Review'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'approved',
+                            child: Text('Approved'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'rejected',
+                            child: Text('Rejected'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          _statusFilter = value;
+                          _page = 1;
+                          _load();
+                        },
+                      ),
+                    ),
+                    IconButton.filledTonal(
+                      onPressed: _load,
+                      icon: const Icon(Icons.search),
                     ),
                   ],
                 ),
               ),
-              if (desktop)
-                FilledButton.icon(
-                  onPressed: _openForm,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Create SO'),
-                ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              _summaryCard('Total Orders', '$_total', desktop),
-              _summaryCard('Outstanding Orders', '$_outstandingOrder', desktop),
-              _summaryCard('Total Material', _unitMap(_totalMaterial), desktop),
-              _summaryCard(
-                'Outstanding Material',
-                _unitMap(_outstandingMaterial),
-                desktop,
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  SizedBox(
-                    width: desktop ? 420 : double.infinity,
-                    child: TextField(
-                      controller: _search,
-                      onSubmitted: (_) {
-                        _page = 1;
+            ),
+            const SizedBox(height: 14),
+            Expanded(child: _body(desktop)),
+            if (!_loading && _error == null)
+              CrudPaginationBar(
+                currentPage: _page,
+                totalPages: _totalPages,
+                totalRecords: _total,
+                onPrevious: _page > 1
+                    ? () {
+                        _page--;
                         _load();
-                      },
-                      decoration: const InputDecoration(
-                        hintText: 'Search SO, customer PO, or customer...',
-                        prefixIcon: Icon(Icons.search),
-                        isDense: true,
-                      ),
-                    ),
+                      }
+                    : null,
+                onNext: _page < _totalPages
+                    ? () {
+                        _page++;
+                        _load();
+                      }
+                    : null,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _mobileContent() => SafeArea(
+    child: ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 104),
+      children: [
+        Text(
+          'Sales Orders',
+          style: Theme.of(
+            context,
+          ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          '$_total Sales Orders • quantities follow each selected unit',
+          style: const TextStyle(color: Color(0xFF667085)),
+        ),
+        const SizedBox(height: 20),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            _summaryCard('Total Orders', '$_total', false),
+            _summaryCard('Outstanding Orders', '$_outstandingOrder', false),
+            _summaryCard('Total Material', _unitMap(_totalMaterial), false),
+            _summaryCard(
+              'Outstanding Material',
+              _unitMap(_outstandingMaterial),
+              false,
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              children: [
+                TextField(
+                  controller: _search,
+                  onSubmitted: (_) {
+                    _page = 1;
+                    _load();
+                  },
+                  decoration: const InputDecoration(
+                    hintText: 'Search SO, customer PO, or customer...',
+                    prefixIcon: Icon(Icons.search),
+                    isDense: true,
                   ),
-                  FilterChip(
+                ),
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: FilterChip(
                     label: const Text('Outstanding Orders'),
                     selected: _outstandingOnly,
                     onSelected: (value) {
@@ -490,70 +628,77 @@ class _SalesOrderPageState extends State<SalesOrderPage> {
                       _load();
                     },
                   ),
-                  SizedBox(
-                    width: 180,
-                    child: DropdownButtonFormField<String?>(
-                      initialValue: _statusFilter,
-                      decoration: const InputDecoration(
-                        labelText: 'Status',
-                        isDense: true,
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: null,
-                          child: Text('All Statuses'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'waiting_review',
-                          child: Text('Waiting Review'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'approved',
-                          child: Text('Approved'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'rejected',
-                          child: Text('Rejected'),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        _statusFilter = value;
-                        _page = 1;
-                        _load();
-                      },
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String?>(
+                  initialValue: _statusFilter,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Status',
+                    isDense: true,
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: null, child: Text('All Statuses')),
+                    DropdownMenuItem(
+                      value: 'waiting_review',
+                      child: Text('Waiting Review'),
                     ),
-                  ),
-                  IconButton.filledTonal(
-                    onPressed: _load,
-                    icon: const Icon(Icons.search),
-                  ),
-                  IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
-                ],
-              ),
+                    DropdownMenuItem(
+                      value: 'approved',
+                      child: Text('Approved'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'rejected',
+                      child: Text('Rejected'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    _statusFilter = value;
+                    _page = 1;
+                    _load();
+                  },
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 14),
-          Expanded(child: _body(desktop)),
-          if (!_loading && _error == null)
-            CrudPaginationBar(
-              currentPage: _page,
-              totalPages: _totalPages,
-              totalRecords: _total,
-              onPrevious: _page > 1
-                  ? () {
-                      _page--;
-                      _load();
-                    }
-                  : null,
-              onNext: _page < _totalPages
-                  ? () {
-                      _page++;
-                      _load();
-                    }
-                  : null,
-            ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 14),
+        if (_loading)
+          const Padding(
+            padding: EdgeInsets.all(48),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_error != null)
+          Padding(
+            padding: const EdgeInsets.all(48),
+            child: Center(child: Text(_error!)),
+          )
+        else if (_orders.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(48),
+            child: Center(child: Text('No Sales Orders found.')),
+          )
+        else
+          _cards(embedded: true),
+        if (!_loading && _error == null)
+          CrudPaginationBar(
+            currentPage: _page,
+            totalPages: _totalPages,
+            totalRecords: _total,
+            onPrevious: _page > 1
+                ? () {
+                    _page--;
+                    _load();
+                  }
+                : null,
+            onNext: _page < _totalPages
+                ? () {
+                    _page++;
+                    _load();
+                  }
+                : null,
+          ),
+      ],
     ),
   );
 
@@ -568,76 +713,75 @@ class _SalesOrderPageState extends State<SalesOrderPage> {
 
   Widget _table() => Card(
     clipBehavior: Clip.antiAlias,
-    child: SingleChildScrollView(
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
-          showCheckboxColumn: false,
-          headingRowColor: WidgetStateProperty.all(const Color(0xFFF9FAFB)),
-          columns: const [
-            DataColumn(label: Text('SO NUMBER')),
-            DataColumn(label: Text('PO RECEIPT')),
-            DataColumn(label: Text('CUSTOMER PO DATE / NO')),
-            DataColumn(label: Text('CUSTOMER')),
-            DataColumn(label: Text('DESCRIPTION')),
-            DataColumn(label: Text('QUANTITY')),
-            DataColumn(label: Text('TOTAL (IDR)')),
-            DataColumn(label: Text('ORDER TYPE')),
-            DataColumn(label: Text('DELIVERY')),
-            DataColumn(label: Text('STATUS')),
-            DataColumn(label: Text('FULFILLMENT')),
-            DataColumn(label: Text('ACTIONS')),
-          ],
-          rows: _orders
-              .map(
-                (order) => DataRow(
-                  onSelectChanged: (_) => _openDetail(order),
-                  cells: [
-                    DataCell(
-                      Text(
-                        order.salesOrderNumber,
-                        style: const TextStyle(
-                          fontFamily: 'monospace',
-                          fontWeight: FontWeight.w700,
-                        ),
+    child: ScrollableDataTable(
+      child: DataTable(
+        showCheckboxColumn: false,
+        headingRowColor: WidgetStateProperty.all(const Color(0xFFF9FAFB)),
+        columns: const [
+          DataColumn(label: Text('SO NUMBER')),
+          DataColumn(label: Text('PO RECEIPT')),
+          DataColumn(label: Text('CUSTOMER PO DATE / NO')),
+          DataColumn(label: Text('CUSTOMER')),
+          DataColumn(label: Text('DESCRIPTION')),
+          DataColumn(label: Text('QUANTITY')),
+          DataColumn(label: Text('TOTAL (IDR)')),
+          DataColumn(label: Text('ORDER TYPE')),
+          DataColumn(label: Text('DELIVERY')),
+          DataColumn(label: Text('STATUS')),
+          DataColumn(label: Text('FULFILLMENT')),
+          DataColumn(label: Text('ACTIONS')),
+        ],
+        rows: _orders
+            .map(
+              (order) => DataRow(
+                onSelectChanged: (_) => _openDetail(order),
+                cells: [
+                  DataCell(
+                    Text(
+                      order.salesOrderNumber,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                    DataCell(Text(_formatDate(order.poReceiptDate))),
-                    DataCell(
-                      Text(
-                        '${_formatDate(order.customerPoDate)}\n${order.customerPoNumber}',
+                  ),
+                  DataCell(Text(_formatDate(order.poReceiptDate))),
+                  DataCell(
+                    Text(
+                      '${_formatDate(order.customerPoDate)}\n${order.customerPoNumber}',
+                    ),
+                  ),
+                  DataCell(
+                    Text('${order.customerCode}\n${order.customerName}'),
+                  ),
+                  DataCell(
+                    SizedBox(
+                      width: 220,
+                      child: Text(
+                        order.descriptions,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    DataCell(
-                      Text('${order.customerCode}\n${order.customerName}'),
-                    ),
-                    DataCell(
-                      SizedBox(
-                        width: 220,
-                        child: Text(
-                          order.descriptions,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ),
-                    DataCell(Text(order.quantitySummary)),
-                    DataCell(Text(_formatNumber(order.grandTotal))),
-                    DataCell(Text(salesOrderTypeLabel(order.orderType))),
-                    DataCell(Text(_formatDate(order.deliveryDate))),
-                    DataCell(_status(order.status)),
-                    DataCell(_fulfillmentChip(order.fulfillmentStatus)),
-                    DataCell(_actions(order)),
-                  ],
-                ),
-              )
-              .toList(),
-        ),
+                  ),
+                  DataCell(Text(order.quantitySummary)),
+                  DataCell(Text(_formatNumber(order.grandTotal))),
+                  DataCell(Text(salesOrderTypeLabel(order.orderType))),
+                  DataCell(Text(_formatDate(order.deliveryDate))),
+                  DataCell(_status(order.status)),
+                  DataCell(_fulfillmentChip(order.fulfillmentStatus)),
+                  DataCell(_actions(order)),
+                ],
+              ),
+            )
+            .toList(),
       ),
     ),
   );
 
-  Widget _cards() => ListView.separated(
+  Widget _cards({bool embedded = false}) => ListView.separated(
+    shrinkWrap: embedded,
+    physics: embedded ? const NeverScrollableScrollPhysics() : null,
     padding: const EdgeInsets.only(bottom: 88),
     itemCount: _orders.length,
     separatorBuilder: (_, _) => const SizedBox(height: 10),

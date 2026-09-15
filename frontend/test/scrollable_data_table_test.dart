@@ -23,5 +23,6 @@ void main() {
     expect(viewports, hasLength(2));
     expect(viewports.first.scrollDirection, Axis.vertical);
     expect(viewports.last.scrollDirection, Axis.horizontal);
+    expect(find.byType(Scrollbar), findsNWidgets(2));
   });
 }

@@ -2,19 +2,46 @@ import 'package:flutter/material.dart';
 
 /// Keeps wide desktop data tables usable without clipping later rows.
 /// The outer viewport scrolls rows, while the inner one scrolls columns.
-class ScrollableDataTable extends StatelessWidget {
+class ScrollableDataTable extends StatefulWidget {
   const ScrollableDataTable({super.key, required this.child});
 
   final Widget child;
 
   @override
+  State<ScrollableDataTable> createState() => _ScrollableDataTableState();
+}
+
+class _ScrollableDataTableState extends State<ScrollableDataTable> {
+  final _vertical = ScrollController();
+  final _horizontal = ScrollController();
+
+  @override
+  void dispose() {
+    _vertical.dispose();
+    _horizontal.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) => Scrollbar(
-    child: SingleChildScrollView(
-      primary: false,
+    controller: _vertical,
+    thumbVisibility: true,
+    child: Scrollbar(
+      controller: _horizontal,
+      thumbVisibility: true,
+      notificationPredicate: (notification) =>
+          notification.metrics.axis == Axis.horizontal,
       child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
+        controller: _vertical,
         primary: false,
-        child: child,
+        padding: const EdgeInsets.only(bottom: 12),
+        child: SingleChildScrollView(
+          controller: _horizontal,
+          scrollDirection: Axis.horizontal,
+          primary: false,
+          padding: const EdgeInsets.only(right: 12),
+          child: widget.child,
+        ),
       ),
     ),
   );
