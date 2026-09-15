@@ -41,7 +41,6 @@ class _DashboardPageState extends State<DashboardPage> {
       auth: widget.auth,
       activeModule: AppModule.dashboard,
       title: 'Dashboard',
-      actions: [IconButton(onPressed: _load, icon: const Icon(Icons.refresh))],
       body: Padding(
         padding: const EdgeInsets.all(20),
         child: _error != null
@@ -70,7 +69,9 @@ class _DashboardPageState extends State<DashboardPage> {
                           : 2,
                       crossAxisSpacing: 14,
                       mainAxisSpacing: 14,
-                      childAspectRatio: 1.7,
+                      childAspectRatio: MediaQuery.sizeOf(context).width >= 700
+                          ? 1.7
+                          : 1.15,
                       children: [
                         _KpiCard('Open Sales Orders', sales?['open']),
                         _KpiCard('Production WIP', wip?['production']),
@@ -104,6 +105,7 @@ class _KpiCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label, style: const TextStyle(color: Color(0xFF667085))),
+          const SizedBox(height: 16),
           const Spacer(),
           Text(
             '${value ?? 0}',

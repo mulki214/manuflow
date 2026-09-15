@@ -8,15 +8,9 @@ import '../../shared/crud_widgets.dart';
 import '../../shared/module_navigation.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
-import '../master_data/master_data_page.dart';
-import '../purchasing/purchasing_page.dart';
 import '../users/change_password_dialog.dart';
 import 'sales_order_form_dialog.dart';
 import 'sales_order_models.dart';
-import '../receiving/receiving_page.dart';
-import '../warehouse/warehouse_page.dart';
-import '../production/production_page.dart';
-import '../quality/quality_page.dart';
 
 class SalesOrderPage extends StatefulWidget {
   const SalesOrderPage({super.key, required this.auth});
@@ -273,50 +267,6 @@ class _SalesOrderPageState extends State<SalesOrderPage> {
     builder: (_) => ChangePasswordDialog(api: widget.auth.api),
   );
 
-  void _selectModule(AppModule module) {
-    if (module == AppModule.user) {
-      Navigator.of(context).popUntil((route) => route.isFirst);
-    } else if (module == AppModule.masterData) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(
-          builder: (_) => MasterDataPage(auth: widget.auth),
-        ),
-      );
-    } else if (module == AppModule.purchasing &&
-        widget.auth.canAccessPurchasing) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(
-          builder: (_) => PurchasingPage(auth: widget.auth),
-        ),
-      );
-    } else if (module == AppModule.receiving &&
-        widget.auth.canAccessReceiving) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(
-          builder: (_) => ReceivingPage(auth: widget.auth),
-        ),
-      );
-    } else if (module == AppModule.warehouse &&
-        widget.auth.canAccessWarehouse) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(
-          builder: (_) => WarehousePage(auth: widget.auth),
-        ),
-      );
-    } else if (module == AppModule.production &&
-        widget.auth.canAccessProduction) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(
-          builder: (_) => ProductionPage(auth: widget.auth),
-        ),
-      );
-    } else if (module == AppModule.quality && widget.auth.canAccessQuality) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(builder: (_) => QualityPage(auth: widget.auth)),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_checkingAccess) {
@@ -340,9 +290,20 @@ class _SalesOrderPageState extends State<SalesOrderPage> {
                 ),
               ],
             ),
-            drawer: _SalesOrderDrawer(
-              auth: widget.auth,
-              onSelected: _selectModule,
+            drawer: Drawer(
+              child: SafeArea(
+                child: AppSidebar(
+                  auth: widget.auth,
+                  activeModule: AppModule.salesOrder,
+                  onModuleSelected: (module) => navigateToModule(
+                    context,
+                    widget.auth,
+                    module,
+                    activeModule: AppModule.salesOrder,
+                  ),
+                  onChangePassword: _changePassword,
+                ),
+              ),
             ),
             body: _content(desktop),
             floatingActionButton: FloatingActionButton.extended(
@@ -1152,64 +1113,4 @@ class _SalesOrderPageState extends State<SalesOrderPage> {
 
   String _formatNumber(double value) =>
       value.toStringAsFixed(value.truncateToDouble() == value ? 0 : 2);
-}
-
-class _SalesOrderDrawer extends StatelessWidget {
-  const _SalesOrderDrawer({required this.auth, required this.onSelected});
-
-  final AuthController auth;
-  final ValueChanged<AppModule> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return Drawer(
-      child: SafeArea(
-        child: Column(
-          children: [
-            UserAccountsDrawerHeader(
-              currentAccountPicture: CircleAvatar(
-                child: Text(auth.currentUser?.initials ?? 'U'),
-              ),
-              accountName: Text(auth.currentUser?.fullName ?? ''),
-              accountEmail: Text(auth.currentUser?.email ?? ''),
-            ),
-            Expanded(
-              child: ListView(
-                children: AppModule.values
-                    .where(
-                      (module) => switch (module) {
-                        AppModule.purchasing => auth.canAccessPurchasing,
-                        AppModule.salesOrder => auth.canAccessSalesOrder,
-                        AppModule.receiving => auth.canAccessReceiving,
-                        AppModule.warehouse => auth.canAccessWarehouse,
-                        AppModule.production => auth.canAccessProduction,
-                        _ => true,
-                      },
-                    )
-                    .map(
-                      (module) => ListTile(
-                        selected: module == AppModule.salesOrder,
-                        leading: Icon(module.icon),
-                        title: Text(module.label),
-                        onTap: () {
-                          Navigator.pop(context);
-                          if (module != AppModule.salesOrder) {
-                            onSelected(module);
-                          }
-                        },
-                      ),
-                    )
-                    .toList(),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.logout),
-              title: const Text('Keluar'),
-              onTap: auth.logout,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }

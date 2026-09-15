@@ -222,6 +222,7 @@ class _ReceivingPageState extends State<ReceivingPage> {
     builder: (_) => ChangePasswordDialog(api: widget.auth.api),
   );
 
+  // ignore: unused_element
   void _selectModule(AppModule module) {
     if (module == AppModule.user) {
       Navigator.of(context).popUntil((route) => route.isFirst);
@@ -278,9 +279,20 @@ class _ReceivingPageState extends State<ReceivingPage> {
         if (!desktop) {
           return Scaffold(
             appBar: AppBar(title: const Text('Receiving')),
-            drawer: _ReceivingDrawer(
-              auth: widget.auth,
-              onSelected: _selectModule,
+            drawer: Drawer(
+              child: SafeArea(
+                child: AppSidebar(
+                  auth: widget.auth,
+                  activeModule: AppModule.receiving,
+                  onModuleSelected: (module) => navigateToModule(
+                    context,
+                    widget.auth,
+                    module,
+                    activeModule: AppModule.receiving,
+                  ),
+                  onChangePassword: _changePassword,
+                ),
+              ),
             ),
             body: _content(desktop),
             floatingActionButton: Column(
@@ -677,6 +689,7 @@ class _ReceivingPageState extends State<ReceivingPage> {
       value.toStringAsFixed(value.truncateToDouble() == value ? 0 : 3);
 }
 
+// ignore: unused_element
 class _ReceivingDrawer extends StatelessWidget {
   const _ReceivingDrawer({required this.auth, required this.onSelected});
   final AuthController auth;

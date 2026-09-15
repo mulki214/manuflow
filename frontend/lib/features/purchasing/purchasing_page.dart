@@ -294,6 +294,7 @@ class _PurchasingPageState extends State<PurchasingPage> {
     );
   }
 
+  // ignore: unused_element
   void _selectModule(AppModule module) {
     if (module == AppModule.user) {
       Navigator.of(context).popUntil((route) => route.isFirst);
@@ -362,9 +363,20 @@ class _PurchasingPageState extends State<PurchasingPage> {
                 ),
               ],
             ),
-            drawer: _PurchasingDrawer(
-              auth: widget.auth,
-              onSelected: _selectModule,
+            drawer: Drawer(
+              child: SafeArea(
+                child: AppSidebar(
+                  auth: widget.auth,
+                  activeModule: AppModule.purchasing,
+                  onModuleSelected: (module) => navigateToModule(
+                    context,
+                    widget.auth,
+                    module,
+                    activeModule: AppModule.purchasing,
+                  ),
+                  onChangePassword: _changePassword,
+                ),
+              ),
             ),
             body: _content(desktop),
             floatingActionButton: FloatingActionButton.extended(
@@ -1097,6 +1109,7 @@ class _PurchasingPageState extends State<PurchasingPage> {
   }
 }
 
+// ignore: unused_element
 class _PurchasingDrawer extends StatelessWidget {
   const _PurchasingDrawer({required this.auth, required this.onSelected});
 
