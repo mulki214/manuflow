@@ -440,8 +440,16 @@ class _WipProductionPageState extends State<WipProductionPage> {
           if (desktop)
             SegmentedButton<_WipView>(
               segments: const [
-                ButtonSegment(value: _WipView.queue, icon: Icon(Icons.hourglass_top_outlined), label: Text('WIP Queue')),
-                ButtonSegment(value: _WipView.history, icon: Icon(Icons.history), label: Text('Process History')),
+                ButtonSegment(
+                  value: _WipView.queue,
+                  icon: Icon(Icons.hourglass_top_outlined),
+                  label: Text('WIP Queue'),
+                ),
+                ButtonSegment(
+                  value: _WipView.history,
+                  icon: Icon(Icons.history),
+                  label: Text('Process History'),
+                ),
               ],
               selected: {_view},
               onSelectionChanged: _changeView,
@@ -451,8 +459,16 @@ class _WipProductionPageState extends State<WipProductionPage> {
               scrollDirection: Axis.horizontal,
               child: SegmentedButton<_WipView>(
                 segments: const [
-                  ButtonSegment(value: _WipView.queue, icon: Icon(Icons.hourglass_top_outlined), label: Text('WIP Queue')),
-                  ButtonSegment(value: _WipView.history, icon: Icon(Icons.history), label: Text('Process History')),
+                  ButtonSegment(
+                    value: _WipView.queue,
+                    icon: Icon(Icons.hourglass_top_outlined),
+                    label: Text('WIP Queue'),
+                  ),
+                  ButtonSegment(
+                    value: _WipView.history,
+                    icon: Icon(Icons.history),
+                    label: Text('Process History'),
+                  ),
                 ],
                 selected: {_view},
                 onSelectionChanged: _changeView,
@@ -537,7 +553,6 @@ class _WipProductionPageState extends State<WipProductionPage> {
                     },
                     icon: const Icon(Icons.search),
                   ),
-                  IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
                 ],
               ),
             ),
@@ -572,7 +587,9 @@ class _WipProductionPageState extends State<WipProductionPage> {
     children: [
       Text(
         'WIP Production',
-        style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+        style: Theme.of(
+          context,
+        ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
       ),
       const SizedBox(height: 4),
       Text(
@@ -586,9 +603,17 @@ class _WipProductionPageState extends State<WipProductionPage> {
     spacing: 10,
     runSpacing: 10,
     children: [
-      OutlinedButton.icon(onPressed: _showStock, icon: const Icon(Icons.inventory_2_outlined), label: const Text('Check Stock')),
       OutlinedButton.icon(
-        onPressed: () => Navigator.of(context).pushReplacement(MaterialPageRoute<void>(builder: (_) => ProductionPage(auth: widget.auth))),
+        onPressed: _showStock,
+        icon: const Icon(Icons.inventory_2_outlined),
+        label: const Text('Check Stock'),
+      ),
+      OutlinedButton.icon(
+        onPressed: () => Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(
+            builder: (_) => ProductionPage(auth: widget.auth),
+          ),
+        ),
         icon: const Icon(Icons.settings_outlined),
         label: const Text('Process Master'),
       ),

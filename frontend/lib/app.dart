@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'features/auth/auth_controller.dart';
 import 'features/auth/login_page.dart';
-import 'features/users/user_page.dart';
+import 'features/dashboard/dashboard_page.dart';
 
 class ErpApp extends StatelessWidget {
   const ErpApp({super.key, required this.auth});
@@ -46,8 +46,9 @@ class ErpApp extends StatelessWidget {
       ),
       home: ListenableBuilder(
         listenable: auth,
-        builder: (context, _) =>
-            auth.isAuthenticated ? UserPage(auth: auth) : LoginPage(auth: auth),
+        builder: (context, _) => auth.isAuthenticated
+            ? DashboardPage(auth: auth)
+            : LoginPage(auth: auth),
       ),
     );
   }

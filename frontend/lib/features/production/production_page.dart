@@ -343,7 +343,6 @@ class _ProductionPageState extends State<ProductionPage> {
                     },
                     icon: const Icon(Icons.search),
                   ),
-                  IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
                 ],
               ),
             ),

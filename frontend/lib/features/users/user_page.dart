@@ -416,11 +416,6 @@ class _UserPageState extends State<UserPage> {
                       tooltip: 'Cari',
                       icon: const Icon(Icons.search),
                     ),
-                    IconButton(
-                      onPressed: _loadUsers,
-                      tooltip: 'Muat ulang',
-                      icon: const Icon(Icons.refresh),
-                    ),
                   ],
                 ),
               ),

@@ -489,10 +489,6 @@ class _MasterDataPageState extends State<MasterDataPage>
                         },
                         icon: const Icon(Icons.search),
                       ),
-                      IconButton(
-                        onPressed: _load,
-                        icon: const Icon(Icons.refresh),
-                      ),
                     ],
                   ),
                 ),

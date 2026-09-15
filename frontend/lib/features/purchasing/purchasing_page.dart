@@ -356,7 +356,6 @@ class _PurchasingPageState extends State<PurchasingPage> {
                 style: TextStyle(fontWeight: FontWeight.w700),
               ),
               actions: [
-                IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
                 IconButton(
                   onPressed: widget.auth.logout,
                   icon: const Icon(Icons.logout),
@@ -613,10 +612,6 @@ class _PurchasingPageState extends State<PurchasingPage> {
                         _load();
                       },
                       icon: const Icon(Icons.search),
-                    ),
-                    IconButton(
-                      onPressed: _load,
-                      icon: const Icon(Icons.refresh),
                     ),
                   ],
                 ),

@@ -14,6 +14,7 @@ from app.models import (
     FinishGoodReceipt,
     ProductionExecution,
     ProductLot,
+    ProductProcessStandard,
     PurchaseOrder,
     PurchaseOrderItem,
     QualityInspection,
@@ -32,6 +33,15 @@ async def dashboard(db: AsyncSession = Depends(get_db), _=Depends(get_current_us
     async def count(model, *filters):
         return (await db.scalar(select(func.count()).select_from(model).where(*filters))) or 0
 
+    standards = list(
+        (await db.execute(
+            select(ProductProcessStandard)
+            .where(ProductProcessStandard.is_active.is_(True), ProductProcessStandard.target_cycle_time_seconds.is_not(None))
+            .order_by(ProductProcessStandard.product_code, ProductProcessStandard.process_code)
+            .limit(8)
+        )).scalars()
+    )
+    productive_seconds = Decimal("21") * Decimal("0.95") * Decimal("3600")
     return {
         "sales_orders": {
             "total": await count(SalesOrder),
@@ -45,6 +55,15 @@ async def dashboard(db: AsyncSession = Depends(get_db), _=Depends(get_current_us
         },
         "finish_goods": await count(FinishGoodReceipt),
         "deliveries": await count(Delivery),
+        "production_capacity": [
+            {
+                "product_code": row.product_code,
+                "process_code": row.process_code,
+                "cycle_time_seconds": row.target_cycle_time_seconds,
+                "capacity_per_day": (productive_seconds / row.target_cycle_time_seconds).quantize(Decimal("0.001")),
+            }
+            for row in standards
+        ],
     }
 
 

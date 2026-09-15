@@ -223,7 +223,6 @@ class _FinishGoodPageState extends State<FinishGoodPage> {
       auth: widget.auth,
       activeModule: AppModule.finishGood,
       title: 'Finish Good',
-      actions: [IconButton(onPressed: _load, icon: const Icon(Icons.refresh))],
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20),

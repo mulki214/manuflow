@@ -117,7 +117,6 @@ class _ReportingPageState extends State<ReportingPage> {
         tooltip: 'Download Excel',
         icon: const Icon(Icons.download_outlined),
       ),
-      IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
     ],
     body: Padding(
       padding: const EdgeInsets.all(20),

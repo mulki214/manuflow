@@ -163,7 +163,6 @@ class _DeliveryPageState extends State<DeliveryPage> {
     auth: widget.auth,
     activeModule: AppModule.delivery,
     title: 'Delivery',
-    actions: [IconButton(onPressed: _load, icon: const Icon(Icons.refresh))],
     floatingActionButton: FloatingActionButton.extended(
       onPressed: _create,
       icon: const Icon(Icons.local_shipping_outlined),
