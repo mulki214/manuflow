@@ -16,20 +16,53 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   Map<String, dynamic>? _data;
   String? _error;
+  late DateTimeRange _performanceRange;
 
   @override
   void initState() {
     super.initState();
+    final today = DateUtils.dateOnly(DateTime.now());
+    _performanceRange = DateTimeRange(
+      start: today.subtract(const Duration(days: 6)),
+      end: today,
+    );
     _load();
   }
 
   Future<void> _load() async {
     try {
-      final value = await widget.auth.api.getJson('/dashboard');
+      final value = await widget.auth.api.getJson(
+        '/dashboard?from_date=${_dateValue(_performanceRange.start)}'
+        '&to_date=${_dateValue(_performanceRange.end)}',
+      );
       if (mounted) setState(() => _data = value);
     } on ApiException catch (exception) {
       if (mounted) setState(() => _error = exception.message);
     }
+  }
+
+  String _dateValue(DateTime value) =>
+      '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+
+  Future<void> _pickPerformanceRange() async {
+    final range = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateUtils.dateOnly(DateTime.now()),
+      initialDateRange: _performanceRange,
+      helpText: 'Performance period (maximum 7 days)',
+    );
+    if (range == null || !mounted) return;
+    if (range.duration.inDays > 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Performance period can be at most 7 days.'),
+        ),
+      );
+      return;
+    }
+    setState(() => _performanceRange = range);
+    await _load();
   }
 
   @override
@@ -37,6 +70,8 @@ class _DashboardPageState extends State<DashboardPage> {
     final data = _data;
     final sales = data?['sales_orders'] as Map<String, dynamic>?;
     final wip = data?['wip'] as Map<String, dynamic>?;
+    final performance =
+        data?['production_performance'] as Map<String, dynamic>?;
     return AppModuleScaffold(
       auth: widget.auth,
       activeModule: AppModule.dashboard,
@@ -88,19 +123,27 @@ class _DashboardPageState extends State<DashboardPage> {
                     ),
                     const SizedBox(height: 24),
                     Text(
-                      'Production Capacity per Day',
+                      'OP Cycle Time Performance',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'Formula: (21 hours × 95%) × 3600 seconds ÷ process cycle time',
+                      'Actual cycle time compared with the target set per product and OP.',
                       style: TextStyle(color: Color(0xFF667085)),
                     ),
                     const SizedBox(height: 12),
-                    _CapacityBarChart(
-                      items: (data['production_capacity'] as List? ?? const [])
+                    OutlinedButton.icon(
+                      onPressed: _pickPerformanceRange,
+                      icon: const Icon(Icons.date_range_outlined),
+                      label: Text(
+                        '${_dateValue(_performanceRange.start)} – ${_dateValue(_performanceRange.end)}',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _OpPerformanceBarChart(
+                      items: (performance?['items'] as List? ?? const [])
                           .cast<Map<String, dynamic>>(),
                     ),
                     const SizedBox(height: 24),
@@ -129,8 +172,8 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 }
 
-class _CapacityBarChart extends StatelessWidget {
-  const _CapacityBarChart({required this.items});
+class _OpPerformanceBarChart extends StatelessWidget {
+  const _OpPerformanceBarChart({required this.items});
   final List<Map<String, dynamic>> items;
   @override
   Widget build(BuildContext context) {
@@ -139,44 +182,60 @@ class _CapacityBarChart extends StatelessWidget {
         child: Padding(
           padding: EdgeInsets.all(20),
           child: Text(
-            'Set Target Cycle Time in Process Standard to show capacity.',
+            'No completed production execution with a cycle-time target in this period.',
           ),
         ),
       );
     }
-    final max = items
-        .map((item) => (item['capacity_per_day'] as num).toDouble())
-        .reduce((a, b) => a > b ? a : b);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: items.map((item) {
-            final value = (item['capacity_per_day'] as num).toDouble();
+            final performance = (item['performance_percent'] as num).toDouble();
+            final color = performance >= 100
+                ? const Color(0xFF12B76A)
+                : performance >= 85
+                ? const Color(0xFFFDB022)
+                : const Color(0xFFF04438);
             return Padding(
               padding: const EdgeInsets.only(bottom: 12),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(
-                    width: 110,
-                    child: Text(
-                      '${item['product_code']} / ${item['process_code']}',
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                  Text(
+                    '${item['product_code']} / ${item['process_code']}',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
-                  Expanded(
-                    child: LinearProgressIndicator(
-                      value: max == 0 ? 0 : value / max,
-                      minHeight: 18,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: LinearProgressIndicator(
+                          value: performance.clamp(0, 100).toDouble() / 100,
+                          minHeight: 18,
+                          color: color,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      SizedBox(
+                        width: 62,
+                        child: Text(
+                          '${performance.toStringAsFixed(1)}%',
+                          textAlign: TextAlign.right,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 10),
-                  SizedBox(
-                    width: 68,
-                    child: Text(
-                      value.toStringAsFixed(0),
-                      textAlign: TextAlign.right,
+                  const SizedBox(height: 4),
+                  Text(
+                    'Target ${_seconds(item['target_cycle_time_seconds'])} s · '
+                    'Actual ${_seconds(item['actual_cycle_time_seconds'])} s · '
+                    '${item['execution_count']} execution(s)',
+                    style: const TextStyle(
+                      color: Color(0xFF667085),
+                      fontSize: 12,
                     ),
                   ),
                 ],
@@ -187,6 +246,8 @@ class _CapacityBarChart extends StatelessWidget {
       ),
     );
   }
+
+  String _seconds(Object? value) => ((value as num?) ?? 0).toStringAsFixed(2);
 }
 
 class _WipPieChart extends StatelessWidget {

@@ -69,4 +69,16 @@ def test_process_standard_rejects_fractional_discrete_output() -> None:
             working_hours="1",
             expected_output_quantity="1.5",
             output_unit="pcs",
+            target_cycle_time_seconds="10",
+        )
+
+
+def test_process_standard_requires_cycle_time_per_product_and_op() -> None:
+    with pytest.raises(ValueError, match="target_cycle_time_seconds"):
+        ProductProcessStandardCreate(
+            product_code="MAT-001",
+            process_code="OP1",
+            working_hours="1",
+            expected_output_quantity="1",
+            output_unit="pcs",
         )

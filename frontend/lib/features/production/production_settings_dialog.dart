@@ -90,10 +90,11 @@ class _ProductionSettingsDialogState extends State<ProductionSettingsDialog>
     if (_product == null ||
         _process == null ||
         _number(_workingHours) == null ||
-        _number(_expectedOutput) == null) {
+        _number(_expectedOutput) == null ||
+        _number(_cycle) == null) {
       setState(
         () => _error =
-            'Product, Process, Working Hours, and Expected Output are required.',
+            'Product, Process, Working Hours, Expected Output, and Target Cycle Time are required.',
       );
       return;
     }
@@ -243,7 +244,7 @@ class _ProductionSettingsDialogState extends State<ProductionSettingsDialog>
           .toList(),
       onChanged: (value) => setState(() => _unit = value ?? 'pcs'),
     ),
-    _field(_cycle, 'Target Cycle Time (seconds)', optional: true),
+    _field(_cycle, 'Target Cycle Time per Product / OP (seconds)'),
     _field(
       _maxNgQty,
       'Maximum NG Quantity',

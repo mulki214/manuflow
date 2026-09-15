@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -29,19 +29,92 @@ reporting_router = APIRouter(prefix="/reporting", tags=["Reporting"])
 
 
 @dashboard_router.get("")
-async def dashboard(db: AsyncSession = Depends(get_db), _=Depends(get_current_user)) -> dict:
+async def dashboard(
+    from_date: date | None = Query(default=None),
+    to_date: date | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+) -> dict:
     async def count(model, *filters):
         return (await db.scalar(select(func.count()).select_from(model).where(*filters))) or 0
 
+    performance_to = to_date or date.today()
+    performance_from = from_date or performance_to - timedelta(days=6)
+    if performance_from > performance_to:
+        raise HTTPException(status_code=422, detail="From date must not be after to date")
+    if (performance_to - performance_from).days > 6:
+        raise HTTPException(status_code=422, detail="Dashboard performance range cannot exceed 7 days")
+
     standards = list(
-        (await db.execute(
-            select(ProductProcessStandard)
-            .where(ProductProcessStandard.is_active.is_(True), ProductProcessStandard.target_cycle_time_seconds.is_not(None))
-            .order_by(ProductProcessStandard.product_code, ProductProcessStandard.process_code)
-            .limit(8)
-        )).scalars()
+        (
+            await db.execute(
+                select(ProductProcessStandard)
+                .where(
+                    ProductProcessStandard.is_active.is_(True),
+                    ProductProcessStandard.target_cycle_time_seconds.is_not(None),
+                )
+                .order_by(ProductProcessStandard.product_code, ProductProcessStandard.process_code)
+            )
+        ).scalars()
     )
-    productive_seconds = Decimal("21") * Decimal("0.95") * Decimal("3600")
+    standards_by_machine = {(row.product_code, row.process_code, row.machine_code): row for row in standards}
+    executions = list(
+        (
+            await db.execute(
+                select(ProductionExecution)
+                .where(
+                    ProductionExecution.process_date >= performance_from,
+                    ProductionExecution.process_date <= performance_to,
+                )
+                .order_by(ProductionExecution.product_code, ProductionExecution.before_process_code)
+            )
+        ).scalars()
+    )
+    performance: dict[tuple[str, str], dict] = {}
+    for execution in executions:
+        actual_cycle = execution.observed_cycle_time_seconds or execution.cycle_time_seconds
+        standard = standards_by_machine.get(
+            (execution.product_code, execution.before_process_code, execution.machine_code)
+        ) or standards_by_machine.get((execution.product_code, execution.before_process_code, None))
+        if not standard or not actual_cycle or actual_cycle <= 0:
+            continue
+        quantity = execution.good_quantity if execution.good_quantity > 0 else execution.processing_quantity
+        if quantity <= 0:
+            continue
+        key = (execution.product_code, execution.before_process_code)
+        metric = performance.setdefault(
+            key,
+            {
+                "product_code": execution.product_code,
+                "product_name": execution.product_name,
+                "process_code": execution.before_process_code,
+                "target_seconds": Decimal("0"),
+                "actual_seconds": Decimal("0"),
+                "quantity": Decimal("0"),
+                "execution_count": 0,
+            },
+        )
+        metric["target_seconds"] += standard.target_cycle_time_seconds * quantity
+        metric["actual_seconds"] += actual_cycle * quantity
+        metric["quantity"] += quantity
+        metric["execution_count"] += 1
+
+    performance_items = []
+    for metric in performance.values():
+        quantity = metric["quantity"]
+        performance_items.append(
+            {
+                "product_code": metric["product_code"],
+                "product_name": metric["product_name"],
+                "process_code": metric["process_code"],
+                "target_cycle_time_seconds": (metric["target_seconds"] / quantity).quantize(Decimal("0.001")),
+                "actual_cycle_time_seconds": (metric["actual_seconds"] / quantity).quantize(Decimal("0.001")),
+                "performance_percent": (metric["target_seconds"] / metric["actual_seconds"] * 100).quantize(
+                    Decimal("0.1")
+                ),
+                "execution_count": metric["execution_count"],
+            }
+        )
     return {
         "sales_orders": {
             "total": await count(SalesOrder),
@@ -55,15 +128,11 @@ async def dashboard(db: AsyncSession = Depends(get_db), _=Depends(get_current_us
         },
         "finish_goods": await count(FinishGoodReceipt),
         "deliveries": await count(Delivery),
-        "production_capacity": [
-            {
-                "product_code": row.product_code,
-                "process_code": row.process_code,
-                "cycle_time_seconds": row.target_cycle_time_seconds,
-                "capacity_per_day": (productive_seconds / row.target_cycle_time_seconds).quantize(Decimal("0.001")),
-            }
-            for row in standards
-        ],
+        "production_performance": {
+            "from_date": performance_from,
+            "to_date": performance_to,
+            "items": performance_items,
+        },
     }
 
 
