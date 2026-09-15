@@ -141,6 +141,16 @@ class _QualityPageState extends State<QualityPage> {
   Future<void> _scanQualityJob() async {
     final scans = await scanProducts(context, widget.auth.api);
     if (scans == null || scans.isEmpty) return;
+    if (scans.length != 1) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Scan exactly one product or lot for Quality.'),
+          ),
+        );
+      }
+      return;
+    }
     final scan = scans.first;
     final job = _jobs
         .where(

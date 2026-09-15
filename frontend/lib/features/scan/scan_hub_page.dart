@@ -49,10 +49,8 @@ class _ScanHubPageState extends State<ScanHubPage> {
       () => showDialog<bool>(
         context: context,
         barrierDismissible: false,
-        builder: (_) => ReceivingFormDialog(
-          auth: widget.auth,
-          scannedProductCodes: _scans.map((item) => item.productCode).toList(),
-        ),
+        builder: (_) =>
+            ReceivingFormDialog(auth: widget.auth, scannedItems: _scans),
       ),
     );
   }

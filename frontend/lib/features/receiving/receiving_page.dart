@@ -113,14 +113,14 @@ class _ReceivingPageState extends State<ReceivingPage> {
     }
   }
 
-  Future<void> _create({List<String> scannedProductCodes = const []}) async {
+  Future<void> _create({
+    List<ScannedProductIdentity> scannedItems = const [],
+  }) async {
     final changed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => ReceivingFormDialog(
-        auth: widget.auth,
-        scannedProductCodes: scannedProductCodes,
-      ),
+      builder: (_) =>
+          ReceivingFormDialog(auth: widget.auth, scannedItems: scannedItems),
     );
     if (changed == true) {
       await _load();
@@ -131,12 +131,7 @@ class _ReceivingPageState extends State<ReceivingPage> {
   Future<void> _scanReceiving() async {
     final scans = await scanProducts(context, widget.auth.api);
     if (scans == null || scans.isEmpty) return;
-    await _create(
-      scannedProductCodes: scans
-          .map((item) => item.productCode)
-          .toSet()
-          .toList(),
-    );
+    await _create(scannedItems: scans);
   }
 
   Future<void> _reverse(ReceivingModel record) async {

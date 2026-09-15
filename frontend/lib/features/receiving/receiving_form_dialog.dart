@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
+import '../../shared/mobile_product_scanner.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
 
@@ -8,10 +9,10 @@ class ReceivingFormDialog extends StatefulWidget {
   const ReceivingFormDialog({
     super.key,
     required this.auth,
-    this.scannedProductCodes = const [],
+    this.scannedItems = const [],
   });
   final AuthController auth;
-  final List<String> scannedProductCodes;
+  final List<ScannedProductIdentity> scannedItems;
 
   @override
   State<ReceivingFormDialog> createState() => _ReceivingFormDialogState();
@@ -49,14 +50,28 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
   String? _error;
 
   List<Map<String, dynamic>> get _visibleSourceItems =>
-      widget.scannedProductCodes.isEmpty
+      widget.scannedItems.isEmpty
       ? _sourceItems
       : _sourceItems
             .where(
-              (item) =>
-                  widget.scannedProductCodes.contains(item['product_code']),
+              (item) => widget.scannedItems.any(
+                (scan) => scan.productCode == item['product_code'],
+              ),
             )
             .toList();
+
+  void _applyScannedItemIfUnambiguous() {
+    if (_sourceItemId != null || widget.scannedItems.length != 1) return;
+    final scan = widget.scannedItems.single;
+    final matches = _sourceItems
+        .where((item) => item['product_code'] == scan.productCode)
+        .toList();
+    if (matches.length != 1) return;
+    _selectSourceItem(matches.single['item_id'] as int);
+    if (scan.lotNumber != null && _lot.text.trim().isEmpty) {
+      _lot.text = scan.lotNumber!;
+    }
+  }
 
   @override
   void initState() {
@@ -194,6 +209,7 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
             response['items'] as List? ?? const [],
           );
         });
+        _applyScannedItemIfUnambiguous();
       }
     } on ApiException catch (exception) {
       if (mounted) setState(() => _error = exception.message);
@@ -350,6 +366,15 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           const SizedBox(height: 12),
+          if (widget.scannedItems.isNotEmpty) ...[
+            Text(
+              widget.scannedItems.length == 1
+                  ? 'Scanned ${widget.scannedItems.single.productCode}${widget.scannedItems.single.lotNumber == null ? '' : ' · Lot ${widget.scannedItems.single.lotNumber}'}. Select the required source to validate and apply it.'
+                  : '${widget.scannedItems.length} scanned products. Select the required source, then choose the matching item to receive.',
+              style: const TextStyle(color: Color(0xFF475467)),
+            ),
+            const SizedBox(height: 12),
+          ],
           Wrap(
             spacing: 14,
             runSpacing: 14,
