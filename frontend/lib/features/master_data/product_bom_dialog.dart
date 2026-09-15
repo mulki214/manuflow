@@ -84,12 +84,15 @@ class _ProductBomDialogState extends State<ProductBomDialog> {
     final codes = <String>{};
     for (final line in _lines) {
       if (line.productCode == null ||
-          num.tryParse(line.quantity.text.replaceAll(',', '.')) == null ||
-          num.parse(line.quantity.text.replaceAll(',', '.')) <= 0 ||
+          quantityValidationError(
+                line.quantity.text.replaceAll(',', '.'),
+                line.unit,
+              ) !=
+              null ||
           !codes.add(line.productCode!)) {
         setState(
           () => _error =
-              'Every line needs a unique material and positive quantity.',
+              'Every line needs a unique material and a valid quantity for its unit.',
         );
         return;
       }
@@ -238,7 +241,9 @@ class _ProductBomDialogState extends State<ProductBomDialog> {
         Expanded(
           child: TextField(
             controller: line.quantity,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            keyboardType: TextInputType.numberWithOptions(
+              decimal: !isDiscreteUnit(line.unit),
+            ),
             decoration: const InputDecoration(labelText: 'Qty'),
           ),
         ),

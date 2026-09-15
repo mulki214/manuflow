@@ -66,6 +66,13 @@ class _ConsumableDispositionDialogState
   double _value(TextEditingController value) =>
       double.tryParse(value.text.trim()) ?? 0;
 
+  String _selectedUnit() {
+    for (final lot in _lots) {
+      if (lot['lot_id'] == _lotId) return lot['unit'].toString();
+    }
+    return '';
+  }
+
   Future<void> _save() async {
     if (_lotId == null ||
         _value(_consumed) + _value(_waste) + _value(_scrap) <= 0 ||
@@ -75,6 +82,18 @@ class _ConsumableDispositionDialogState
             'Select a lot, enter a disposition quantity, and select Scrap Location when applicable.',
       );
       return;
+    }
+    final unit = _selectedUnit();
+    for (final controller in [_consumed, _waste, _scrap]) {
+      final error = quantityValidationError(
+        controller.text,
+        unit,
+        allowZero: true,
+      );
+      if (error != null) {
+        setState(() => _error = error);
+        return;
+      }
     }
     setState(() {
       _saving = true;
@@ -180,7 +199,9 @@ class _ConsumableDispositionDialogState
 
   Widget _field(TextEditingController controller, String label) => TextField(
     controller: controller,
-    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+    keyboardType: TextInputType.numberWithOptions(
+      decimal: !isDiscreteUnit(_selectedUnit()),
+    ),
     decoration: InputDecoration(labelText: label),
   );
 }

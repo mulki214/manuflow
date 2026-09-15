@@ -623,7 +623,7 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
     controller: controller,
     maxLines: lines,
     keyboardType: number
-        ? const TextInputType.numberWithOptions(decimal: true)
+        ? TextInputType.numberWithOptions(decimal: !isDiscreteUnit(_unit))
         : TextInputType.text,
     decoration: InputDecoration(labelText: label),
     validator: (value) {

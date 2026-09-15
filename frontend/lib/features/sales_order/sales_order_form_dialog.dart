@@ -530,11 +530,12 @@ class _SalesOrderFormDialogState extends State<SalesOrderFormDialog> {
                 width: 180,
                 child: TextFormField(
                   controller: item.quantity,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
+                  keyboardType: TextInputType.numberWithOptions(
+                    decimal: !isDiscreteUnit(item.unit),
                   ),
                   decoration: const InputDecoration(labelText: 'Quantity'),
-                  validator: (value) => _number(value, 'Quantity'),
+                  validator: (value) =>
+                      quantityValidationError(value, item.unit),
                 ),
               ),
               SizedBox(

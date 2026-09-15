@@ -922,6 +922,12 @@ async def record_consumable_disposition(
     ).scalar_one_or_none()
     if not execution or not source:
         raise HTTPException(status_code=404, detail="Production Execution or Consumable Lot not found")
+    for value, label in (
+        (data.consumed_quantity, "Consumed Quantity"),
+        (data.waste_quantity, "Waste Quantity"),
+        (data.scrap_quantity, "Scrap Quantity"),
+    ):
+        require_whole_quantity(value, source.unit, label)
     total = quantity(data.consumed_quantity + data.waste_quantity + data.scrap_quantity)
     if total > source.current_quantity_grams:
         raise HTTPException(status_code=422, detail="Consumable disposition exceeds available Lot stock")

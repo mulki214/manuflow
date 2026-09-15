@@ -255,15 +255,15 @@ class _QualityInspectionFormDialogState
                     const SizedBox(height: 14),
                     TextFormField(
                       controller: _inspection,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
+                      keyboardType: TextInputType.numberWithOptions(
+                        decimal: !isDiscreteUnit(widget.job.unit),
                       ),
                       decoration: InputDecoration(
                         labelText:
                             'Inspection Quantity (${unitLabel(widget.job.unit)}) *',
                       ),
                       validator: (v) =>
-                          _v(_inspection) <= 0 ? 'Required' : null,
+                          quantityValidationError(v, widget.job.unit),
                     ),
                     const SizedBox(height: 18),
                     Text(
@@ -426,7 +426,11 @@ class _QualityInspectionFormDialogState
   );
   Widget _qty(TextEditingController controller, String label) => TextFormField(
     controller: controller,
-    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+    keyboardType: TextInputType.numberWithOptions(
+      decimal: !isDiscreteUnit(widget.job.unit),
+    ),
     decoration: InputDecoration(labelText: label),
+    validator: (value) =>
+        quantityValidationError(value, widget.job.unit, allowZero: true),
   );
 }
