@@ -1,0 +1,6 @@
+# Copy this file to frontend/android/key.properties and replace every value.
+# Do not commit key.properties or the keystore file.
+storePassword=replace-with-a-strong-keystore-password
+keyPassword=replace-with-a-strong-key-password
+keyAlias=manuflow-production
+storeFile=keystore/manuflow-production.jks
