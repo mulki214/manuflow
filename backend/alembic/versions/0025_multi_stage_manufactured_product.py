@@ -14,11 +14,10 @@ depends_on = None
 
 def upgrade() -> None:
     # PostgreSQL enum values are intentionally additive: existing product
-    # categories and historical transactions must remain unchanged.
-    op.execute(
-        "ALTER TYPE product_category_enum "
-        "ADD VALUE IF NOT EXISTS 'multi_stage_manufactured'"
-    )
+    # categories and historical transactions must remain unchanged. PostgreSQL
+    # requires ADD VALUE to be committed before a later migration can query it.
+    with op.get_context().autocommit_block():
+        op.execute("ALTER TYPE product_category_enum ADD VALUE IF NOT EXISTS 'multi_stage_manufactured'")
 
 
 def downgrade() -> None:
