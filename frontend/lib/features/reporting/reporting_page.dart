@@ -18,6 +18,7 @@ class ReportingPage extends StatefulWidget {
 class _ReportingPageState extends State<ReportingPage> {
   static const _reports = {
     'stock': 'Stock by Lot',
+    'product-stock': 'Product Stock Summary',
     'purchase-order': 'Purchase Order Outstanding',
     'sales-order-fulfillment': 'Sales Order Fulfillment',
     'production': 'Production',
@@ -105,6 +106,63 @@ class _ReportingPageState extends State<ReportingPage> {
       }
     }
   }
+
+  String _label(String key) => switch (key) {
+    'product' || 'product_code' => 'Product Code',
+    'product_name' => 'Product Name',
+    'product_description' => 'Product Description',
+    'plant_code' => 'Plant Code',
+    'plant_name' => 'Plant Name',
+    'storage_location_code' => 'Storage Location Code',
+    'storage_location_name' => 'Storage Location Name',
+    'storage_location_description' => 'Storage Location Description',
+    'stock_on_hand' => 'Stock On Hand',
+    'active_lot_count' => 'Active Lots',
+    _ => key.replaceAll('_', ' '),
+  };
+
+  Future<void> _openDetail(Map<String, dynamic> row) => showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('${_reports[_report]} Detail'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 620, maxHeight: 620),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: row.entries
+                .map(
+                  (entry) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _label(entry.key),
+                          style: const TextStyle(
+                            color: Color(0xFF667085),
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(entry.value?.toString() ?? '-'),
+                      ],
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
+    ),
+  );
 
   @override
   Widget build(BuildContext context) => AppModuleScaffold(
@@ -199,14 +257,13 @@ class _ReportingPageState extends State<ReportingPage> {
         child: DataTable(
           columns: columns
               .map(
-                (name) => DataColumn(
-                  label: Text(name.replaceAll('_', ' ').toUpperCase()),
-                ),
+                (name) => DataColumn(label: Text(_label(name).toUpperCase())),
               )
               .toList(),
           rows: _rows
               .map(
                 (row) => DataRow(
+                  onSelectChanged: (_) => _openDetail(row),
                   cells: columns
                       .map(
                         (name) => DataCell(Text(row[name]?.toString() ?? '-')),

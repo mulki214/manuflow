@@ -279,7 +279,6 @@ class _MasterDataPageState extends State<MasterDataPage>
         ('Gross Weight (g)', value('gross_weight')),
         ('Nett Weight (g)', value('nett_weight')),
         ('Default Cycle Time (seconds)', value('default_cycle_time_seconds')),
-        ('Stock Quantity', record.stockLabel),
       ],
       MasterDataType.machine => [
         ('Machine Code', value('code')),
@@ -538,8 +537,6 @@ class _MasterDataPageState extends State<MasterDataPage>
             DataColumn(label: Text(_primaryColumnLabel)),
             DataColumn(label: Text(_detailColumnLabel)),
             DataColumn(label: Text(_secondaryColumnLabel)),
-            if (_type == MasterDataType.product)
-              const DataColumn(label: Text('STOCK QTY')),
             const DataColumn(label: Text('ACTIONS')),
           ],
           rows: _records
@@ -577,13 +574,6 @@ class _MasterDataPageState extends State<MasterDataPage>
                         ),
                       ),
                     ),
-                    if (_type == MasterDataType.product)
-                      DataCell(
-                        Text(
-                          record.stockLabel,
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                      ),
                     DataCell(_actions(record)),
                   ],
                 ),
@@ -631,13 +621,6 @@ class _MasterDataPageState extends State<MasterDataPage>
                             fontSize: 13,
                           ),
                         ),
-                        if (record.type == MasterDataType.product) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            'Stock Qty: ${record.stockLabel}',
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ],
                       ],
                     ),
                   ),
