@@ -1,4 +1,5 @@
 import re
+from decimal import Decimal
 
 import pytest
 from pydantic import ValidationError
@@ -48,6 +49,30 @@ def test_product_rejects_negative_weight() -> None:
             part_no="BP-001",
             gross_weight=-1,
             nett_weight=1,
+        )
+
+
+def test_product_accepts_optional_default_cycle_time() -> None:
+    product = ProductCreate(
+        customer_code="ACME",
+        supplier_code="SUP",
+        part_name="Brake Pad",
+        part_no="BP-001",
+        gross_weight=1.5,
+        nett_weight=1.2,
+        default_cycle_time_seconds=Decimal("45.5"),
+    )
+    assert product.default_cycle_time_seconds == Decimal("45.5")
+
+    with pytest.raises(ValidationError):
+        ProductCreate(
+            customer_code="ACME",
+            supplier_code="SUP",
+            part_name="Brake Pad",
+            part_no="BP-001",
+            gross_weight=1.5,
+            nett_weight=1.2,
+            default_cycle_time_seconds=0,
         )
 
 

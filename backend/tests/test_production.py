@@ -8,6 +8,7 @@ from app.middleware import is_production_path
 from app.models import WipLotStatus, WipProcessType
 from app.production_services import (
     child_segment_code,
+    effective_target_cycle_time,
     ensure_production_execution_reversible,
     format_production_number,
     next_job_status,
@@ -73,12 +74,18 @@ def test_process_standard_rejects_fractional_discrete_output() -> None:
         )
 
 
-def test_process_standard_requires_cycle_time_per_product_and_op() -> None:
-    with pytest.raises(ValueError, match="target_cycle_time_seconds"):
-        ProductProcessStandardCreate(
-            product_code="MAT-001",
-            process_code="OP1",
-            working_hours="1",
-            expected_output_quantity="1",
-            output_unit="pcs",
-        )
+def test_process_standard_can_use_product_default_cycle_time() -> None:
+    standard = ProductProcessStandardCreate(
+        product_code="MAT-001",
+        process_code="OP1",
+        working_hours="1",
+        expected_output_quantity="1",
+        output_unit="pcs",
+    )
+    assert standard.target_cycle_time_seconds is None
+
+
+def test_cycle_time_prefers_product_process_override() -> None:
+    assert effective_target_cycle_time(Decimal("60"), None) == Decimal("60")
+    assert effective_target_cycle_time(Decimal("60"), Decimal("45")) == Decimal("45")
+    assert effective_target_cycle_time(None, None) is None

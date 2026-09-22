@@ -322,6 +322,7 @@ class Product(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     gross_weight: Mapped[Decimal] = mapped_column(Numeric(14, 3), nullable=False)
     nett_weight: Mapped[Decimal] = mapped_column(Numeric(14, 3), nullable=False)
+    default_cycle_time_seconds: Mapped[Decimal | None] = mapped_column(Numeric(14, 3), nullable=True)
     current_stock_grams: Mapped[Decimal] = mapped_column(Numeric(20, 3), nullable=False, default=0)
     category: Mapped[ProductCategory] = mapped_column(
         Enum(ProductCategory, name="product_category_enum"),

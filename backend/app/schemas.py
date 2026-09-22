@@ -217,6 +217,7 @@ class ProductBase(BaseModel):
     description: str | None = Field(default=None, max_length=2000)
     gross_weight: Decimal = Field(ge=0, decimal_places=3)
     nett_weight: Decimal = Field(ge=0, decimal_places=3)
+    default_cycle_time_seconds: Decimal | None = Field(default=None, gt=0, decimal_places=3)
     category: ProductCategory = ProductCategory.finished_good
 
     @model_validator(mode="after")
@@ -243,6 +244,7 @@ class ProductUpdate(BaseModel):
     description: str | None = Field(default=None, max_length=2000)
     gross_weight: Decimal | None = Field(default=None, ge=0, decimal_places=3)
     nett_weight: Decimal | None = Field(default=None, ge=0, decimal_places=3)
+    default_cycle_time_seconds: Decimal | None = Field(default=None, gt=0, decimal_places=3)
     category: ProductCategory | None = None
 
 
@@ -992,6 +994,7 @@ class ProductionWipJobResponse(BaseModel):
     current_quantity: Decimal
     status: WipLotStatus
     can_complete: bool
+    target_cycle_time_seconds: Decimal | None
     created_at: datetime
     updated_at: datetime
 
@@ -1010,7 +1013,7 @@ class ProductProcessStandardCreate(BaseModel):
     working_hours: Decimal = Field(gt=0, decimal_places=3)
     expected_output_quantity: Decimal = Field(gt=0, decimal_places=3)
     output_unit: UnitOfMeasure
-    target_cycle_time_seconds: Decimal = Field(gt=0, decimal_places=3)
+    target_cycle_time_seconds: Decimal | None = Field(default=None, gt=0, decimal_places=3)
     maximum_ng_quantity: Decimal | None = Field(default=None, ge=0, decimal_places=3)
     maximum_ng_percent: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=4)
     is_active: bool = True

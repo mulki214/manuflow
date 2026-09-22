@@ -53,6 +53,7 @@ class ProductionWipJobModel {
     required this.currentQuantity,
     required this.status,
     required this.canComplete,
+    this.targetCycleTimeSeconds,
     this.repairRouteCode,
     this.repairStepOrder,
   });
@@ -76,6 +77,9 @@ class ProductionWipJobModel {
         currentQuantity: productionNumber(json['current_quantity']),
         status: json['status'].toString(),
         canComplete: json['can_complete'] == true,
+        targetCycleTimeSeconds: json['target_cycle_time_seconds'] == null
+            ? null
+            : productionNumber(json['target_cycle_time_seconds']),
         repairRouteCode: json['repair_route_code']?.toString(),
         repairStepOrder: json['repair_step_order'] as int?,
       );
@@ -97,6 +101,7 @@ class ProductionWipJobModel {
   final double currentQuantity;
   final String status;
   final bool canComplete;
+  final double? targetCycleTimeSeconds;
   final String? repairRouteCode;
   final int? repairStepOrder;
 }

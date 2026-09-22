@@ -36,6 +36,7 @@ from app.module_permissions import DepartmentModuleAccess, resolve_department_me
 from app.operational_services import actual_cycle_time_seconds, ng_limit_exceeded, require_whole_quantity
 from app.production_services import (
     child_segment_code,
+    effective_target_cycle_time,
     ensure_production_execution_reversible,
     generate_production_number,
     next_job_status,
@@ -256,6 +257,18 @@ async def job_response(db: AsyncSession, record: WipLotJob) -> ProductionWipJobR
     process = await db.get(WipProcess, record.process_code)
     product = await db.get(Product, record.product_code)
     plant = await db.get(Plant, record.plant_code)
+    process_target = (
+        await db.execute(
+            select(ProductProcessStandard.target_cycle_time_seconds)
+            .where(
+                ProductProcessStandard.product_code == record.product_code,
+                ProductProcessStandard.process_code == record.process_code,
+                ProductProcessStandard.machine_code.is_(None),
+                ProductProcessStandard.is_active.is_(True),
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
     return ProductionWipJobResponse(
         id=record.id,
         source_transfer_number=record.source_transfer_number,
@@ -279,6 +292,9 @@ async def job_response(db: AsyncSession, record: WipLotJob) -> ProductionWipJobR
         current_quantity=record.current_quantity,
         status=record.status,
         can_complete=record.status in (WipLotStatus.queued, WipLotStatus.in_process) and record.current_quantity > 0,
+        target_cycle_time_seconds=effective_target_cycle_time(
+            product.default_cycle_time_seconds if product else None, process_target
+        ),
         created_at=record.created_at,
         updated_at=record.updated_at,
     )

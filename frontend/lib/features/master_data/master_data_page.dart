@@ -278,6 +278,7 @@ class _MasterDataPageState extends State<MasterDataPage>
         ('Description', value('description')),
         ('Gross Weight (g)', value('gross_weight')),
         ('Nett Weight (g)', value('nett_weight')),
+        ('Default Cycle Time (seconds)', value('default_cycle_time_seconds')),
         ('Stock Quantity', record.stockLabel),
       ],
       MasterDataType.machine => [

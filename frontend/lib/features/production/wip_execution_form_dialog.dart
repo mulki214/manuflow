@@ -246,6 +246,11 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
                           'Before Process',
                           '${widget.job.processCode} — ${widget.job.processName}',
                         ),
+                        if (widget.job.targetCycleTimeSeconds != null)
+                          _summary(
+                            'Target Cycle Time (automatic)',
+                            '${_number(widget.job.targetCycleTimeSeconds!)} seconds',
+                          ),
                         _summary(
                           'Available WIP',
                           '${_number(widget.job.currentQuantity)} ${unitLabel(widget.job.unit)}',

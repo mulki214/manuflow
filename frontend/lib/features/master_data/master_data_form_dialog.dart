@@ -241,6 +241,9 @@ class _MasterDataFormDialogState extends State<MasterDataFormDialog> {
       'description': field('description').text.trim(),
       'gross_weight': double.tryParse(field('gross_weight').text),
       'nett_weight': double.tryParse(field('nett_weight').text),
+      'default_cycle_time_seconds': double.tryParse(
+        field('default_cycle_time_seconds').text,
+      ),
       'category': _productCategory,
     },
     MasterDataType.machine => {
@@ -477,6 +480,13 @@ class _MasterDataFormDialogState extends State<MasterDataFormDialog> {
         input('part_no', 'Part No'),
         input('gross_weight', 'Gross Weight (g)', number: true),
         input('nett_weight', 'Nett Weight (g)', number: true),
+        input(
+          'default_cycle_time_seconds',
+          'Default Cycle Time (seconds)',
+          number: true,
+          optional: true,
+          positive: true,
+        ),
         input('description', 'Description', lines: 3),
       ],
       MasterDataType.machine => <Widget>[
@@ -659,6 +669,8 @@ class _MasterDataFormDialogState extends State<MasterDataFormDialog> {
     bool phone = false,
     bool number = false,
     bool integer = false,
+    bool optional = false,
+    bool positive = false,
   }) {
     return TextFormField(
       controller: field(key),
@@ -670,10 +682,15 @@ class _MasterDataFormDialogState extends State<MasterDataFormDialog> {
           : TextInputType.text,
       decoration: InputDecoration(labelText: label),
       validator: (value) {
-        if (value == null || value.trim().isEmpty) return 'Required';
+        if (value == null || value.trim().isEmpty) {
+          return optional ? null : 'Required';
+        }
         if (number &&
             (double.tryParse(value) == null || double.parse(value) < 0)) {
           return 'Enter a valid non-negative number';
+        }
+        if (positive && double.parse(value) <= 0) {
+          return 'Enter a value greater than zero';
         }
         if (integer && int.tryParse(value) == null) return 'Enter a valid year';
         return null;

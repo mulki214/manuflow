@@ -11,6 +11,11 @@ from app.models import DailyProductionSequence, WipLotStatus
 from app.warehouse_services import quantity
 
 
+def effective_target_cycle_time(product_default: Decimal | None, process_override: Decimal | None) -> Decimal | None:
+    """Resolve a product target, allowing an explicit Product/OP override."""
+    return process_override if process_override is not None else product_default
+
+
 def format_production_number(process_date: date, sequence: int) -> str:
     if sequence < 0 or sequence > 999:
         raise ValueError("Production daily sequence must be between 000 and 999")

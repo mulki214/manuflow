@@ -12,6 +12,7 @@ from app.document_services import excel_bytes
 from app.models import (
     Delivery,
     FinishGoodReceipt,
+    Product,
     ProductionExecution,
     ProductLot,
     ProductProcessStandard,
@@ -23,6 +24,7 @@ from app.models import (
     WipLotJob,
     WipLotStatus,
 )
+from app.production_services import effective_target_cycle_time
 
 dashboard_router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 reporting_router = APIRouter(prefix="/reporting", tags=["Reporting"])
@@ -49,15 +51,16 @@ async def dashboard(
         (
             await db.execute(
                 select(ProductProcessStandard)
-                .where(
-                    ProductProcessStandard.is_active.is_(True),
-                    ProductProcessStandard.target_cycle_time_seconds.is_not(None),
-                )
+                .where(ProductProcessStandard.is_active.is_(True))
                 .order_by(ProductProcessStandard.product_code, ProductProcessStandard.process_code)
             )
         ).scalars()
     )
     standards_by_machine = {(row.product_code, row.process_code, row.machine_code): row for row in standards}
+    product_targets = {
+        code: target
+        for code, target in (await db.execute(select(Product.code, Product.default_cycle_time_seconds))).all()
+    }
     executions = list(
         (
             await db.execute(
@@ -76,7 +79,11 @@ async def dashboard(
         standard = standards_by_machine.get(
             (execution.product_code, execution.before_process_code, execution.machine_code)
         ) or standards_by_machine.get((execution.product_code, execution.before_process_code, None))
-        if not standard or not actual_cycle or actual_cycle <= 0:
+        target_cycle = effective_target_cycle_time(
+            product_targets.get(execution.product_code),
+            standard.target_cycle_time_seconds if standard else None,
+        )
+        if not target_cycle or not actual_cycle or actual_cycle <= 0:
             continue
         quantity = execution.good_quantity if execution.good_quantity > 0 else execution.processing_quantity
         if quantity <= 0:
@@ -94,7 +101,7 @@ async def dashboard(
                 "execution_count": 0,
             },
         )
-        metric["target_seconds"] += standard.target_cycle_time_seconds * quantity
+        metric["target_seconds"] += target_cycle * quantity
         metric["actual_seconds"] += actual_cycle * quantity
         metric["quantity"] += quantity
         metric["execution_count"] += 1
