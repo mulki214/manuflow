@@ -284,10 +284,14 @@ class BillOfMaterialItemResponse(BomItemInput):
 
 
 class BillOfMaterialReplace(BaseModel):
+    output_quantity: Decimal = Field(default=Decimal("1"), gt=0, decimal_places=3)
+    output_unit: UnitOfMeasure | None = None
     items: list[BomItemInput] = Field(max_length=100)
 
     @model_validator(mode="after")
     def unique_materials(self) -> "BillOfMaterialReplace":
+        if self.output_unit:
+            require_whole_quantity(self.output_quantity, self.output_unit.value, "BOM Output Quantity")
         if len({item.material_product_code for item in self.items}) != len(self.items):
             raise ValueError("The same material cannot be included more than once")
         return self
@@ -295,6 +299,8 @@ class BillOfMaterialReplace(BaseModel):
 
 class BillOfMaterialResponse(BaseModel):
     finished_product_code: str
+    output_quantity: Decimal
+    output_unit: UnitOfMeasure | None
     items: list[BillOfMaterialItemResponse]
 
 

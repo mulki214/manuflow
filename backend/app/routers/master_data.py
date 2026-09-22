@@ -11,6 +11,7 @@ from app.dependencies import get_current_user
 from app.master_data_services import apply_changes, generate_plant_code, generate_sequential_code
 from app.models import (
     AccessLevel,
+    BillOfMaterial,
     BillOfMaterialItem,
     Corporation,
     Department,
@@ -256,6 +257,7 @@ async def get_product_bom(
     product = await db.get(Product, product_code)
     if not product:
         raise not_found("Product")
+    bom = await db.get(BillOfMaterial, product_code)
     records = list(
         (
             await db.execute(
@@ -280,7 +282,12 @@ async def get_product_bom(
                 is_active=record.is_active,
             )
         )
-    return BillOfMaterialResponse(finished_product_code=product_code, items=items)
+    return BillOfMaterialResponse(
+        finished_product_code=product_code,
+        output_quantity=bom.output_quantity if bom else 1,
+        output_unit=bom.output_unit if bom else None,
+        items=items,
+    )
 
 
 @router.put("/products/{product_code}/bom", response_model=BillOfMaterialResponse)
@@ -323,6 +330,18 @@ async def replace_product_bom(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="BOM cannot contain a circular WIP dependency",
+        )
+    header = await db.get(BillOfMaterial, product_code)
+    if header:
+        header.output_quantity = data.output_quantity
+        header.output_unit = data.output_unit.value if data.output_unit else None
+    else:
+        db.add(
+            BillOfMaterial(
+                finished_product_code=product_code,
+                output_quantity=data.output_quantity,
+                output_unit=data.output_unit.value if data.output_unit else None,
+            )
         )
     existing = list(
         (await db.execute(select(BillOfMaterialItem).where(BillOfMaterialItem.finished_product_code == product_code)))

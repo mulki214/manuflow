@@ -12,6 +12,7 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.document_services import sales_order_pdf_bytes, signed_document_payload, verify_document_payload
 from app.models import (
+    BillOfMaterial,
     BillOfMaterialItem,
     Corporation,
     Delivery,
@@ -318,6 +319,10 @@ async def apply_order_data(
         .scalars()
         .all()
     )
+    bom_outputs = {
+        record.finished_product_code: (record.output_quantity, record.output_unit)
+        for record in (await db.execute(select(BillOfMaterial))).scalars()
+    }
     for item in new_items:
         product = products_by_code[item.product_code]
         if product.category == ProductCategory.multi_stage_manufactured:
@@ -326,7 +331,13 @@ async def apply_order_data(
             requirements = [(item.product_code, item.quantity_grams, item.unit)]
         else:
             try:
-                requirements = expand_bom_leaf_requirements(item.product_code, item.quantity_grams, bom_rows)
+                requirements = expand_bom_leaf_requirements(
+                    item.product_code,
+                    item.quantity_grams,
+                    bom_rows,
+                    output_unit=item.unit,
+                    bom_outputs=bom_outputs,
+                )
             except ValueError as exc:
                 raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
         existing_allocations = {
@@ -344,6 +355,11 @@ async def apply_order_data(
             if allocation:
                 if allocation.unit != unit:
                     raise HTTPException(status_code=422, detail="Material unit cannot change after SO creation")
+                if allocation.received_quantity > required_quantity:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="BOM or SO change cannot reduce a material allocation below its received quantity",
+                    )
                 allocation.required_quantity = required_quantity
             else:
                 db.add(

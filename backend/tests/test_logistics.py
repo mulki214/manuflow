@@ -86,6 +86,11 @@ def test_bill_of_material_rejects_fractional_discrete_quantity() -> None:
         BomItemInput(material_product_code="MAT-001", quantity="1.5", unit="pcs")
 
 
+def test_bill_of_material_rejects_fractional_discrete_batch_output() -> None:
+    with pytest.raises(ValueError, match="whole number"):
+        BillOfMaterialReplace(output_quantity="1.5", output_unit="pcs", items=[])
+
+
 def test_finish_good_and_delivery_routes_expose_the_required_lifecycle_actions() -> None:
     finish_routes = {
         (route.path, method) for route in finish_router.routes for method in getattr(route, "methods", set())

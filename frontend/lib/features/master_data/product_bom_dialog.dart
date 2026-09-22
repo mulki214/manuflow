@@ -19,7 +19,9 @@ class ProductBomDialog extends StatefulWidget {
 
 class _ProductBomDialogState extends State<ProductBomDialog> {
   final List<_BomLine> _lines = [];
+  final _outputQuantity = TextEditingController(text: '1');
   List<Map<String, dynamic>> _products = [];
+  String _outputUnit = 'pcs';
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -32,6 +34,7 @@ class _ProductBomDialogState extends State<ProductBomDialog> {
 
   @override
   void dispose() {
+    _outputQuantity.dispose();
     for (final line in _lines) {
       line.quantity.dispose();
     }
@@ -52,6 +55,9 @@ class _ProductBomDialogState extends State<ProductBomDialog> {
             .cast<Map<String, dynamic>>()
             .where((product) => product['category'] != 'finished_good')
             .toList();
+        _outputQuantity.text =
+            bomResponse['output_quantity']?.toString() ?? '1';
+        _outputUnit = bomResponse['output_unit']?.toString() ?? 'pcs';
         for (final item
             in (bomResponse['items'] as List).cast<Map<String, dynamic>>()) {
           _lines.add(
@@ -81,6 +87,14 @@ class _ProductBomDialogState extends State<ProductBomDialog> {
   }
 
   Future<void> _save() async {
+    if (quantityValidationError(
+          _outputQuantity.text.replaceAll(',', '.'),
+          _outputUnit,
+        ) !=
+        null) {
+      setState(() => _error = 'Output per batch must be valid for its unit.');
+      return;
+    }
     final codes = <String>{};
     for (final line in _lines) {
       if (line.productCode == null ||
@@ -105,6 +119,10 @@ class _ProductBomDialogState extends State<ProductBomDialog> {
       await widget.api.putJson(
         '/master-data/products/${widget.productCode}/bom',
         {
+          'output_quantity': num.parse(
+            _outputQuantity.text.replaceAll(',', '.'),
+          ),
+          'output_unit': _outputUnit,
           'items': _lines
               .map(
                 (line) => {
@@ -157,10 +175,47 @@ class _ProductBomDialogState extends State<ProductBomDialog> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Define the input material or WIP required to make one unit.',
+                    'Define the output per batch, then the input material or WIP required.',
                     style: TextStyle(color: Color(0xFF667085)),
                   ),
                   const SizedBox(height: 18),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _outputQuantity,
+                          keyboardType: TextInputType.numberWithOptions(
+                            decimal: !isDiscreteUnit(_outputUnit),
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'Output per BOM Batch',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      SizedBox(
+                        width: 120,
+                        child: DropdownButtonFormField<String>(
+                          initialValue: _outputUnit,
+                          decoration: const InputDecoration(
+                            labelText: 'Output Unit',
+                          ),
+                          items: inventoryUnits
+                              .map(
+                                (unit) => DropdownMenuItem(
+                                  value: unit,
+                                  child: Text(unitLabel(unit)),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (value) => setState(
+                            () => _outputUnit = value ?? _outputUnit,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
                   Expanded(
                     child: _lines.isEmpty
                         ? const Center(
