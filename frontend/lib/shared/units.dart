@@ -1,4 +1,4 @@
-const inventoryUnits = ['pcs', 'bar', 'liter', 'pail', 'kg', 'gram'];
+const inventoryUnits = ['pcs', 'bar', 'liter', 'pail', 'ton', 'kg', 'gram'];
 const discreteUnits = {'pcs', 'bar', 'pail'};
 
 String unitLabel(String unit) => unit == 'gram' ? 'grams' : unit;

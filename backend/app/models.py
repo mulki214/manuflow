@@ -66,6 +66,7 @@ class UnitOfMeasure(str, enum.Enum):
     liter = "liter"
     pail = "pail"
     kg = "kg"
+    ton = "ton"
     gram = "gram"
 
 
