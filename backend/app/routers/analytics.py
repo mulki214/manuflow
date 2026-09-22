@@ -12,6 +12,7 @@ from app.document_services import excel_bytes
 from app.models import (
     Delivery,
     FinishGoodReceipt,
+    Plant,
     Product,
     ProductionExecution,
     ProductLot,
@@ -21,6 +22,7 @@ from app.models import (
     QualityInspection,
     SalesOrder,
     SalesOrderItem,
+    StorageLocation,
     WipLotJob,
     WipLotStatus,
 )
@@ -28,6 +30,42 @@ from app.production_services import effective_target_cycle_time
 
 dashboard_router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 reporting_router = APIRouter(prefix="/reporting", tags=["Reporting"])
+
+
+def stock_report_rows(rows) -> list[dict]:
+    return [
+        {
+            "product_code": r[0],
+            "product_name": r[1],
+            "product_description": r[2],
+            "lot_number": r[3],
+            "plant_code": r[4],
+            "plant_name": r[5],
+            "storage_location_code": r[6],
+            "storage_location_name": r[7],
+            "storage_location_description": r[8],
+            "unit": r[9],
+            "quantity": r[10],
+        }
+        for r in rows
+    ]
+
+
+def product_stock_report_rows(rows) -> list[dict]:
+    return [
+        {
+            "product_code": row[0],
+            "product_name": row[1],
+            "part_no": row[2],
+            "product_description": row[3],
+            "category": row[4],
+            "supply_source": row[5],
+            "unit": row[6] or "-",
+            "active_lot_count": row[7],
+            "stock_on_hand": row[8],
+        }
+        for row in rows
+    ]
 
 
 @dashboard_router.get("")
@@ -148,30 +186,63 @@ async def stock_report(db: AsyncSession = Depends(get_db), _=Depends(get_current
     rows = await db.execute(
         select(
             ProductLot.product_code,
+            Product.part_name,
+            Product.description,
             ProductLot.lot_number,
             ProductLot.plant_code,
+            Plant.name,
             ProductLot.storage_location_code,
+            StorageLocation.name,
+            StorageLocation.description,
             ProductLot.unit,
             func.sum(ProductLot.current_quantity_grams),
-        ).group_by(
+        )
+        .join(Product, Product.code == ProductLot.product_code)
+        .join(Plant, Plant.code == ProductLot.plant_code)
+        .join(StorageLocation, StorageLocation.code == ProductLot.storage_location_code)
+        .group_by(
             ProductLot.product_code,
+            Product.part_name,
+            Product.description,
             ProductLot.lot_number,
             ProductLot.plant_code,
+            Plant.name,
             ProductLot.storage_location_code,
+            StorageLocation.name,
+            StorageLocation.description,
             ProductLot.unit,
         )
     )
-    return [
-        {
-            "product_code": r[0],
-            "lot_number": r[1],
-            "plant_code": r[2],
-            "storage_location_code": r[3],
-            "unit": r[4],
-            "quantity": r[5],
-        }
-        for r in rows.all()
-    ]
+    return stock_report_rows(rows.all())
+
+
+async def product_stock_report(db: AsyncSession, _=None) -> list[dict]:
+    """Summarize live inventory by product and unit without mixing UOMs."""
+    rows = await db.execute(
+        select(
+            Product.code,
+            Product.part_name,
+            Product.part_no,
+            Product.description,
+            Product.category,
+            Product.supply_source,
+            ProductLot.unit,
+            func.count(ProductLot.id),
+            func.coalesce(func.sum(ProductLot.current_quantity_grams), 0),
+        )
+        .outerjoin(ProductLot, ProductLot.product_code == Product.code)
+        .group_by(
+            Product.code,
+            Product.part_name,
+            Product.part_no,
+            Product.description,
+            Product.category,
+            Product.supply_source,
+            ProductLot.unit,
+        )
+        .order_by(Product.code, ProductLot.unit)
+    )
+    return product_stock_report_rows(rows.all())
 
 
 @reporting_router.get("/stock/export-excel")
@@ -179,15 +250,32 @@ async def export_stock_report(db: AsyncSession = Depends(get_db), _=Depends(get_
     records = await stock_report(db, _)
     content = excel_bytes(
         "Stock by Lot",
-        ["Product", "Lot", "Quantity", "Unit", "Plant", "Storage Location"],
+        [
+            "Product Code",
+            "Product Name",
+            "Product Description",
+            "Lot",
+            "Quantity",
+            "Unit",
+            "Plant Code",
+            "Plant Name",
+            "Storage Location Code",
+            "Storage Location Name",
+            "Storage Location Description",
+        ],
         [
             [
                 row["product_code"],
+                row["product_name"],
+                row["product_description"],
                 row["lot_number"],
                 float(row["quantity"]),
                 row["unit"],
                 row["plant_code"],
+                row["plant_name"],
                 row["storage_location_code"],
+                row["storage_location_name"],
+                row["storage_location_description"],
             ]
             for row in records
         ],
@@ -215,6 +303,8 @@ async def _operational_report(
     date_from: date | None,
     date_to: date | None,
 ) -> list[dict]:
+    if report_type == "product-stock":
+        return await product_stock_report(db)
     if report_type in {"production", "machine", "operator"}:
         filters = []
         if date_from:
@@ -229,6 +319,8 @@ async def _operational_report(
                     "date": row.process_date,
                     "shift": row.shift,
                     "product": row.product_code,
+                    "product_name": row.product_name,
+                    "product_description": row.description,
                     "lot": row.lot_number,
                     "process": row.before_process_name,
                     "machine": row.machine_name or "-",
@@ -271,6 +363,8 @@ async def _operational_report(
                 "date": row.inspection_date,
                 "shift": row.shift,
                 "product": row.product_code,
+                "product_name": row.product_name,
+                "product_description": row.description,
                 "lot": row.lot_number,
                 "before_process": row.before_process_name,
                 "inspected": row.inspection_quantity,
@@ -304,6 +398,7 @@ async def _operational_report(
                 "customer_po": order.customer_po_number,
                 "customer": order.customer_name,
                 "product": item.product_code,
+                "product_name": item.part_name,
                 "description": item.description,
                 "ordered": item.quantity_grams,
                 "delivered": item.delivered_quantity,
@@ -334,6 +429,7 @@ async def _operational_report(
                 "date": order.po_date,
                 "supplier": order.supplier_name,
                 "product": item.product_code,
+                "product_name": item.part_name,
                 "description": item.description,
                 "ordered": item.quantity_grams,
                 "received": item.received_quantity,
