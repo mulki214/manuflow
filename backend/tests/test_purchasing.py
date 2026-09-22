@@ -147,7 +147,7 @@ def test_purchase_order_requires_quotation_date_and_unique_products() -> None:
 
 
 def test_purchase_order_item_accepts_supported_inventory_units() -> None:
-    for unit in ("pcs", "bar", "liter", "pail", "kg", "gram"):
+    for unit in ("pcs", "bar", "liter", "pail", "ton", "kg", "gram"):
         data = valid_order_data()
         data["items"][0]["unit"] = unit
         if unit in {"pcs", "bar", "pail"}:

@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-WEIGHT_UNITS = {"gram", "kg"}
+WEIGHT_UNITS = {"gram", "kg", "ton"}
 DISCRETE_UNITS = {"pcs", "bar", "pail"}
 
 
@@ -13,6 +13,8 @@ def require_whole_quantity(value: Decimal, unit: str, label: str = "Quantity") -
 
 def to_grams(value: Decimal, unit: str) -> Decimal:
     """Normalize weight without pretending count/volume units are convertible."""
+    if unit == "ton":
+        return value * Decimal("1000000")
     if unit == "kg":
         return value * Decimal("1000")
     if unit == "gram":
@@ -22,6 +24,8 @@ def to_grams(value: Decimal, unit: str) -> Decimal:
 
 def from_grams(value: Decimal, unit: str) -> Decimal:
     """Convert a canonical gram balance back to a document weight unit."""
+    if unit == "ton":
+        return value / Decimal("1000000")
     if unit == "kg":
         return value / Decimal("1000")
     if unit == "gram":
@@ -49,6 +53,8 @@ def display_quantity(value: Decimal, document_unit: str) -> Decimal | int:
 
 
 def shipment_weight_kg(quantity: Decimal, unit: str, gross_weight_grams: Decimal) -> Decimal:
+    if unit == "ton":
+        return quantity * Decimal("1000")
     if unit == "kg":
         return quantity
     if unit == "gram":

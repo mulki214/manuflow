@@ -66,6 +66,7 @@ class UnitOfMeasure(str, enum.Enum):
     liter = "liter"
     pail = "pail"
     kg = "kg"
+    ton = "ton"
     gram = "gram"
 
 
@@ -321,6 +322,7 @@ class Product(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     gross_weight: Mapped[Decimal] = mapped_column(Numeric(14, 3), nullable=False)
     nett_weight: Mapped[Decimal] = mapped_column(Numeric(14, 3), nullable=False)
+    default_cycle_time_seconds: Mapped[Decimal | None] = mapped_column(Numeric(14, 3), nullable=True)
     current_stock_grams: Mapped[Decimal] = mapped_column(Numeric(20, 3), nullable=False, default=0)
     category: Mapped[ProductCategory] = mapped_column(
         Enum(ProductCategory, name="product_category_enum"),
@@ -907,6 +909,23 @@ class DailyDeliverySequence(Base):
     __tablename__ = "daily_delivery_sequences"
     sequence_date: Mapped[date] = mapped_column(Date, primary_key=True)
     last_value: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class BillOfMaterial(Base):
+    """The batch yield shared by all input lines for one manufactured product."""
+
+    __tablename__ = "bill_of_materials"
+
+    finished_product_code: Mapped[str] = mapped_column(
+        ForeignKey("products.code", ondelete="CASCADE"), primary_key=True
+    )
+    output_quantity: Mapped[Decimal] = mapped_column(Numeric(20, 3), nullable=False, default=1)
+    # Null means a legacy one-unit BOM whose output unit was never recorded.
+    output_unit: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class BillOfMaterialItem(Base):

@@ -138,6 +138,52 @@ def test_multilevel_bom_allocates_only_leaf_raw_materials() -> None:
     ]
 
 
+def test_bom_batch_yield_converts_discrete_input_to_output_units() -> None:
+    rows = [bom("PRODUCT-B", "MATERIAL-A", "1", "bar")]
+    outputs = {"PRODUCT-B": (Decimal("10"), "pcs")}
+
+    assert expand_bom_leaf_requirements(
+        "PRODUCT-B",
+        Decimal("50"),
+        rows,
+        output_unit="pcs",
+        bom_outputs=outputs,
+    ) == [("MATERIAL-A", Decimal("5"), "bar")]
+
+
+def test_bom_batch_yield_rounds_discrete_materials_up_after_calculation() -> None:
+    rows = [bom("PRODUCT-B", "MATERIAL-A", "1", "bar")]
+
+    assert expand_bom_leaf_requirements(
+        "PRODUCT-B",
+        Decimal("25"),
+        rows,
+        output_unit="pcs",
+        bom_outputs={"PRODUCT-B": (Decimal("10"), "pcs")},
+    ) == [("MATERIAL-A", Decimal("3"), "bar")]
+
+
+def test_bom_batch_yield_supports_pail_to_gram() -> None:
+    assert expand_bom_leaf_requirements(
+        "PRODUCT-F",
+        Decimal("750"),
+        [bom("PRODUCT-F", "CHEMICAL", "1", "pail")],
+        output_unit="gram",
+        bom_outputs={"PRODUCT-F": (Decimal("500"), "gram")},
+    ) == [("CHEMICAL", Decimal("2"), "pail")]
+
+
+def test_bom_batch_yield_rejects_a_mismatched_output_unit() -> None:
+    with pytest.raises(ValueError, match="output unit"):
+        expand_bom_leaf_requirements(
+            "PRODUCT-B",
+            Decimal("10"),
+            [bom("PRODUCT-B", "MATERIAL-A", "1", "bar")],
+            output_unit="kg",
+            bom_outputs={"PRODUCT-B": (Decimal("10"), "pcs")},
+        )
+
+
 def test_bom_cycle_is_detected_before_saving_wip_bom() -> None:
     rows = [bom("WIP-OP2", "WIP-OP1", "1")]
 

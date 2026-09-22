@@ -1,7 +1,7 @@
 from collections import defaultdict
 from datetime import date, datetime
-from decimal import Decimal
-from typing import Iterable, Protocol
+from decimal import ROUND_CEILING, Decimal
+from typing import Iterable, Mapping, Protocol
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
@@ -20,20 +20,31 @@ class BomLine(Protocol):
     unit: str
 
 
+BomOutputs = Mapping[str, tuple[Decimal, str | None]]
+_DISCRETE_BOM_UNITS = {"pcs", "bar", "pail"}
+
+
 def expand_bom_leaf_requirements(
-    product_code: str, ordered_quantity: Decimal, bom_rows: Iterable[BomLine]
+    product_code: str,
+    ordered_quantity: Decimal,
+    bom_rows: Iterable[BomLine],
+    *,
+    output_unit: str | None = None,
+    bom_outputs: BomOutputs | None = None,
 ) -> list[tuple[str, Decimal, str]]:
     """Resolve a product's active BOM into quantities of its leaf materials.
 
     A leaf is a product without an active BOM. This keeps an SO allocation at
     the supplier-receivable material level even when its product moves through
-    one or more WIP stages before becoming a Finished Good.
+    one or more WIP stages before becoming a Finished Good. Each BOM can state
+    the quantity it produces per batch; legacy BOMs default to one output unit.
     """
     bom_by_product: dict[str, list[BomLine]] = defaultdict(list)
     for bom in bom_rows:
         bom_by_product[bom.finished_product_code].append(bom)
 
     requirements: dict[str, tuple[Decimal, str]] = {}
+    yields = bom_outputs or {}
 
     def visit(code: str, quantity: Decimal, unit: str | None, ancestry: tuple[str, ...]) -> None:
         if code in ancestry:
@@ -46,15 +57,24 @@ def expand_bom_leaf_requirements(
                 raise ValueError(f"Material {code} has inconsistent units across its BOM paths")
             requirements[code] = ((existing[0] if existing else Decimal("0")) + quantity, unit or "")
             return
+        output_quantity, configured_output_unit = yields.get(code, (Decimal("1"), None))
+        if configured_output_unit and unit and configured_output_unit != unit:
+            raise ValueError(
+                f"BOM output unit for {code} is {configured_output_unit}; requested unit is {unit}"
+            )
         for component in components:
-            leaf_quantity = quantity * Decimal(component.quantity)
+            leaf_quantity = quantity * Decimal(component.quantity) / Decimal(output_quantity)
             visit(component.material_product_code, leaf_quantity, component.unit, (*ancestry, code))
 
     if bom_by_product.get(product_code):
-        visit(product_code, ordered_quantity, None, ())
+        visit(product_code, ordered_quantity, output_unit, ())
     return [
-        (material_code, quantity, unit)
-        for material_code, (quantity, unit) in requirements.items()
+        (
+            material_code,
+            amount.to_integral_value(rounding=ROUND_CEILING) if unit in _DISCRETE_BOM_UNITS else amount,
+            unit,
+        )
+        for material_code, (amount, unit) in requirements.items()
     ]
 
 

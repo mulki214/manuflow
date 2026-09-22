@@ -15,6 +15,7 @@ from app.operational_services import (
 
 
 def test_weight_units_are_normalized_to_grams() -> None:
+    assert to_grams(Decimal("1.5"), "ton") == Decimal("1500000.0")
     assert to_grams(Decimal("1.5"), "kg") == Decimal("1500.0")
     assert to_grams(Decimal("250"), "gram") == Decimal("250")
     with pytest.raises(ValueError):
@@ -22,14 +23,17 @@ def test_weight_units_are_normalized_to_grams() -> None:
 
 
 def test_inventory_boundary_preserves_document_units() -> None:
+    assert inventory_unit("ton") == "gram"
     assert inventory_unit("kg") == "gram"
     assert inventory_unit("pcs") == "pcs"
     assert to_inventory_quantity(Decimal("1.25"), "kg") == Decimal("1250.00")
     assert to_inventory_quantity(Decimal("4"), "pcs") == Decimal("4")
     assert from_inventory_quantity(Decimal("1250"), "kg") == Decimal("1.25")
+    assert from_inventory_quantity(Decimal("1500000"), "ton") == Decimal("1.5")
 
 
 def test_shipment_weight_uses_product_weight_for_piece_units() -> None:
+    assert shipment_weight_kg(Decimal("1.5"), "ton", Decimal("999")) == Decimal("1500")
     assert shipment_weight_kg(Decimal("10"), "pcs", Decimal("250")) == Decimal("2.5")
     assert shipment_weight_kg(Decimal("2500"), "gram", Decimal("999")) == Decimal("2.5")
 
