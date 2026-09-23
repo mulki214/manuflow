@@ -11,6 +11,7 @@ from app.routers import (
     module_access,
     production,
     purchasing,
+    purchase_requests,
     quality,
     receiving,
     sales_orders,
@@ -32,6 +33,7 @@ app.include_router(users.router, prefix=settings.api_prefix)
 app.include_router(master_data.router, prefix=settings.api_prefix)
 app.include_router(module_access.router, prefix=settings.api_prefix)
 app.include_router(purchasing.router, prefix=settings.api_prefix)
+app.include_router(purchase_requests.router, prefix=settings.api_prefix)
 app.include_router(sales_orders.router, prefix=settings.api_prefix)
 app.include_router(receiving.router, prefix=settings.api_prefix)
 app.include_router(warehouse.router, prefix=settings.api_prefix)
