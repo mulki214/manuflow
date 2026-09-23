@@ -171,14 +171,15 @@ class _WipProductionPageState extends State<WipProductionPage> {
       return;
     }
     final scan = scans.first;
-    final job = _jobs
+    final candidates = _jobs
         .where(
           (item) =>
               item.productCode == scan.productCode &&
-              (scan.lotNumber == null || item.lotNumber == scan.lotNumber),
+              (scan.lotNumber == null || item.lotNumber == scan.lotNumber) &&
+              item.canComplete,
         )
-        .firstOrNull;
-    if (job == null) {
+        .toList();
+    if (candidates.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -190,7 +191,48 @@ class _WipProductionPageState extends State<WipProductionPage> {
       }
       return;
     }
+    final job = candidates.length == 1
+        ? candidates.single
+        : await _pickScannedWipJob(candidates);
+    if (job == null || !mounted) return;
     await _complete(job);
+  }
+
+  Future<ProductionWipJobModel?> _pickScannedWipJob(
+    List<ProductionWipJobModel> candidates,
+  ) {
+    return showDialog<ProductionWipJobModel>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Select WIP Job'),
+        content: SizedBox(
+          width: 520,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: candidates.length,
+            itemBuilder: (_, index) {
+              final job = candidates[index];
+              return ListTile(
+                title: Text('${job.processCode} — ${job.processName}'),
+                subtitle: Text(
+                  '${job.productCode} — ${job.productName}\n'
+                  '${job.description}\nLot ${job.lotNumber}',
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onTap: () => Navigator.pop(context, job),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _reverse(ProductionExecutionModel execution) async {

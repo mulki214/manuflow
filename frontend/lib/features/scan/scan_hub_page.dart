@@ -11,6 +11,7 @@ import '../production/wip_execution_form_dialog.dart';
 import '../quality/quality_inspection_form_dialog.dart';
 import '../quality/quality_models.dart';
 import '../receiving/receiving_form_dialog.dart';
+import '../warehouse/warehouse_transfer_form_dialog.dart';
 
 /// Mobile-only entry point for QR-assisted operational transactions.
 ///
@@ -85,6 +86,20 @@ class _ScanHubPageState extends State<ScanHubPage> {
     );
   }
 
+  Future<void> _openWarehouse() async {
+    if (_scans.isEmpty) return;
+    await _open(
+      () => showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => WarehouseTransferFormDialog(
+          api: widget.auth.api,
+          scannedItems: _scans,
+        ),
+      ),
+    );
+  }
+
   Future<void> _openQuality() async {
     final job = await _singleQualityJob();
     if (job == null || !mounted) return;
@@ -136,15 +151,47 @@ class _ScanHubPageState extends State<ScanHubPage> {
           )
           .toList();
       if (jobs.length == 1) return jobs.single;
-      setState(
-        () => _error = jobs.isEmpty
-            ? 'No active WIP job is available for this QR.'
-            : 'More than one WIP job matches this QR. Open WIP Production to select it.',
-      );
+      if (jobs.length > 1) return _pickWipJob(jobs);
+      setState(() => _error = 'No active WIP job is available for this QR.');
     } on ApiException catch (error) {
       setState(() => _error = error.message);
     }
     return null;
+  }
+
+  Future<ProductionWipJobModel?> _pickWipJob(List<ProductionWipJobModel> jobs) {
+    return showDialog<ProductionWipJobModel>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Select WIP Job'),
+        content: SizedBox(
+          width: 520,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: jobs.length,
+            itemBuilder: (_, index) {
+              final job = jobs[index];
+              return ListTile(
+                title: Text('${job.processCode} — ${job.processName}'),
+                subtitle: Text(
+                  '${job.productCode} — ${job.productName}\n'
+                  '${job.description}\nLot ${job.lotNumber}',
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onTap: () => Navigator.pop(context, job),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<QualityWipJobModel?> _singleQualityJob() async {
@@ -214,9 +261,10 @@ class _ScanHubPageState extends State<ScanHubPage> {
               child: ListTile(
                 title: Text('${item.productCode} — ${item.productName}'),
                 subtitle: Text(
-                  item.lotNumber == null
-                      ? 'Product QR'
-                      : 'Lot ${item.lotNumber}',
+                  '${item.description.isEmpty ? 'No description' : item.description}\n'
+                  '${item.lotNumber == null ? 'Product QR' : 'Lot ${item.lotNumber}'}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 trailing: IconButton(
                   tooltip: 'Remove',
@@ -244,6 +292,12 @@ class _ScanHubPageState extends State<ScanHubPage> {
                   icon: const Icon(Icons.move_to_inbox),
                   label: const Text('Receiving'),
                 ),
+              if (widget.auth.canAccessWarehouse)
+                OutlinedButton.icon(
+                  onPressed: _opening ? null : _openWarehouse,
+                  icon: const Icon(Icons.warehouse_outlined),
+                  label: const Text('Warehouse Transfer'),
+                ),
               if (widget.auth.canAccessProduction)
                 OutlinedButton.icon(
                   onPressed: _opening ? null : _openWip,
@@ -266,7 +320,7 @@ class _ScanHubPageState extends State<ScanHubPage> {
           ),
           const SizedBox(height: 12),
           const Text(
-            'Receiving and Delivery retain all scanned products. WIP and Quality process one verified queue job at a time.',
+            'Receiving retains all scans. Warehouse filters valid source lots; WIP and Quality process one verified queue job at a time.',
           ),
         ],
       ],

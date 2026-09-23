@@ -14,6 +14,8 @@ void main() {
     });
 
     expect(item.key, 'PJA:11');
+    expect(item.productName, 'Produk Jadi ABC');
+    expect(item.description, 'Produk Jadi ABC 789');
     expect(item.lotNumber, 'LOT-11');
     expect(item.availableQuantity, 100);
   });

@@ -128,9 +128,10 @@ class _MobileProductScannerDialogState
                   dense: true,
                   title: Text('${item.productCode} — ${item.productName}'),
                   subtitle: Text(
-                    item.lotNumber == null
-                        ? 'Product QR'
-                        : 'Lot ${item.lotNumber}',
+                    '${item.description.isEmpty ? 'No description' : item.description}\n'
+                    '${item.lotNumber == null ? 'Product QR' : 'Lot ${item.lotNumber}'}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   trailing: IconButton(
                     icon: const Icon(Icons.close),

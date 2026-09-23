@@ -4,6 +4,7 @@ import '../../core/api_client.dart';
 import '../../shared/app_sidebar.dart';
 import '../../shared/crud_widgets.dart';
 import '../../shared/module_navigation.dart';
+import '../../shared/mobile_product_scanner.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
 import '../master_data/master_data_page.dart';
@@ -107,16 +108,27 @@ class _WarehousePageState extends State<WarehousePage> {
     }
   }
 
-  Future<void> _create() async {
+  Future<void> _create({
+    List<ScannedProductIdentity> scannedItems = const [],
+  }) async {
     final changed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => WarehouseTransferFormDialog(api: widget.auth.api),
+      builder: (_) => WarehouseTransferFormDialog(
+        api: widget.auth.api,
+        scannedItems: scannedItems,
+      ),
     );
     if (changed == true) {
       await _load();
       _message('Material Transfer posted.');
     }
+  }
+
+  Future<void> _scanTransfer() async {
+    final scans = await scanProducts(context, widget.auth.api);
+    if (scans == null || scans.isEmpty || !mounted) return;
+    await _create(scannedItems: scans);
   }
 
   Future<void> _reverse(WarehouseTransferModel transfer) async {
@@ -238,11 +250,17 @@ class _WarehousePageState extends State<WarehousePage> {
               ),
             ),
             body: content,
-            floatingActionButton: FloatingActionButton.extended(
-              onPressed: _create,
-              icon: const Icon(Icons.add),
-              label: const Text('Transfer'),
-            ),
+            floatingActionButton: supportsMobileProductScanner
+                ? FloatingActionButton.extended(
+                    onPressed: _scanTransfer,
+                    icon: const Icon(Icons.qr_code_scanner),
+                    label: const Text('Scan Transfer'),
+                  )
+                : FloatingActionButton.extended(
+                    onPressed: _create,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Transfer'),
+                  ),
           );
         }
         return Scaffold(
@@ -300,12 +318,19 @@ class _WarehousePageState extends State<WarehousePage> {
                   ],
                 ),
               ),
-              if (desktop)
+              if (desktop) ...[
+                if (supportsMobileProductScanner)
+                  IconButton(
+                    tooltip: 'Scan Product / Lot QR',
+                    onPressed: _scanTransfer,
+                    icon: const Icon(Icons.qr_code_scanner),
+                  ),
                 FilledButton.icon(
                   onPressed: _create,
                   icon: const Icon(Icons.add),
-                  label: Text('Create Transfer'),
+                  label: const Text('Create Transfer'),
                 ),
+              ],
             ],
           ),
           const SizedBox(height: 14),

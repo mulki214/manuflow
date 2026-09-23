@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
+import '../../shared/mobile_product_scanner.dart';
 import '../../shared/units.dart';
 import '../production/production_models.dart';
 import 'warehouse_models.dart';
 
 class WarehouseTransferFormDialog extends StatefulWidget {
-  const WarehouseTransferFormDialog({super.key, required this.api});
+  const WarehouseTransferFormDialog({
+    super.key,
+    required this.api,
+    this.scannedItems = const [],
+  });
 
   final ApiClient api;
+  final List<ScannedProductIdentity> scannedItems;
 
   @override
   State<WarehouseTransferFormDialog> createState() =>
@@ -32,6 +38,17 @@ class _WarehouseTransferFormDialogState
   bool _loading = true;
   bool _saving = false;
   String? _error;
+
+  List<WarehouseStockLot> get _selectableLots {
+    if (widget.scannedItems.isEmpty) return _lots;
+    return _lots.where((lot) {
+      return widget.scannedItems.any(
+        (scan) =>
+            scan.productCode == lot.productCode &&
+            (scan.lotNumber == null || scan.lotNumber == lot.lotNumber),
+      );
+    }).toList();
+  }
 
   @override
   void initState() {
@@ -75,6 +92,14 @@ class _WarehouseTransferFormDialogState
             .cast<Map<String, dynamic>>()
             .where((item) => item['storage_type'] == 'finished_goods')
             .toList();
+        // A lot QR can safely select its source lot. A product QR deliberately
+        // only narrows the choices because the mandatory lot is still unknown.
+        final matches = _selectableLots;
+        if (widget.scannedItems.length == 1 &&
+            widget.scannedItems.single.lotNumber != null &&
+            matches.length == 1) {
+          _lot = matches.single;
+        }
       });
     } on ApiException catch (exception) {
       if (mounted) setState(() => _error = exception.message);
@@ -172,12 +197,19 @@ class _WarehouseTransferFormDialogState
                       ),
                     ),
                     const SizedBox(height: 14),
+                    if (widget.scannedItems.isNotEmpty) ...[
+                      Text(
+                        'Source lots filtered from scanned QR. Select a lot before posting when the QR is product-only.',
+                        style: const TextStyle(color: Color(0xFF667085)),
+                      ),
+                      const SizedBox(height: 14),
+                    ],
                     DropdownButtonFormField<int>(
                       decoration: const InputDecoration(
                         labelText: 'Product / Lot / Source Location *',
                       ),
                       isExpanded: true,
-                      items: _lots
+                      items: _selectableLots
                           .map(
                             (lot) => DropdownMenuItem(
                               value: lot.id,
