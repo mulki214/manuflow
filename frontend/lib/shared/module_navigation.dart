@@ -7,6 +7,7 @@ import '../features/finish_good/finish_good_page.dart';
 import '../features/master_data/master_data_page.dart';
 import '../features/production/production_page.dart';
 import '../features/purchasing/purchasing_page.dart';
+import '../features/purchase_request/purchase_request_page.dart';
 import '../features/quality/quality_page.dart';
 import '../features/receiving/receiving_page.dart';
 import '../features/reporting/reporting_page.dart';
@@ -36,6 +37,7 @@ void navigateToModule(
     AppModule.purchasing when auth.canAccessPurchasing => PurchasingPage(
       auth: auth,
     ),
+    AppModule.purchaseRequest => PurchaseRequestPage(auth: auth),
     AppModule.receiving when auth.canAccessReceiving => ReceivingPage(
       auth: auth,
     ),

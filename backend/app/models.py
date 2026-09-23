@@ -43,6 +43,12 @@ class PurchaseOrderStatus(str, enum.Enum):
     rejected = "rejected"
 
 
+class PurchaseRequestStatus(str, enum.Enum):
+    waiting_review = "waiting_review"
+    approved = "approved"
+    rejected = "rejected"
+
+
 class SalesOrderStatus(str, enum.Enum):
     waiting_review = "waiting_review"
     approved = "approved"
@@ -199,6 +205,13 @@ class DailyUserSequence(Base):
 
 class DailyPurchaseOrderSequence(Base):
     __tablename__ = "daily_purchase_order_sequences"
+
+    sequence_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    last_value: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class DailyPurchaseRequestSequence(Base):
+    __tablename__ = "daily_purchase_request_sequences"
 
     sequence_date: Mapped[date] = mapped_column(Date, primary_key=True)
     last_value: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -451,6 +464,42 @@ class PurchaseOrderItem(Base):
     remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
     purchase_order: Mapped[PurchaseOrder] = relationship(back_populates="items")
+
+
+class PurchaseRequest(Base):
+    __tablename__ = "purchase_requests"
+
+    request_number: Mapped[str] = mapped_column(String(20), primary_key=True)
+    request_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    department_code: Mapped[str | None] = mapped_column(ForeignKey("departments.code", ondelete="SET NULL"), nullable=True)
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    status: Mapped[PurchaseRequestStatus] = mapped_column(
+        Enum(PurchaseRequestStatus, name="purchase_request_status_enum"), nullable=False, default=PurchaseRequestStatus.waiting_review, index=True
+    )
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    items: Mapped[list["PurchaseRequestItem"]] = relationship(back_populates="purchase_request", cascade="all, delete-orphan", order_by="PurchaseRequestItem.line_number", lazy="selectin")
+
+
+class PurchaseRequestItem(Base):
+    __tablename__ = "purchase_request_items"
+    __table_args__ = (UniqueConstraint("request_number", "line_number", name="uq_purchase_request_item_line"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    request_number: Mapped[str] = mapped_column(ForeignKey("purchase_requests.request_number", ondelete="CASCADE"), nullable=False, index=True)
+    line_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    product_code: Mapped[str] = mapped_column(ForeignKey("products.code", ondelete="RESTRICT"), nullable=False, index=True)
+    part_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    part_no: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(14, 3), nullable=False)
+    unit: Mapped[str] = mapped_column(String(10), nullable=False)
+    remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    purchase_request: Mapped[PurchaseRequest] = relationship(back_populates="items")
 
 
 class SalesOrder(Base):

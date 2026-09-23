@@ -9,6 +9,7 @@ enum AppModule {
   masterData(Icons.dataset_outlined, 'Master Data'),
   salesOrder(Icons.shopping_cart_outlined, 'Sales Order'),
   purchasing(Icons.shopping_bag_outlined, 'Purchasing'),
+  purchaseRequest(Icons.playlist_add_outlined, 'Purchase Request'),
   receiving(Icons.move_to_inbox_outlined, 'Receiving'),
   warehouse(Icons.warehouse_outlined, 'Warehouse'),
   production(Icons.precision_manufacturing_outlined, 'Production'),

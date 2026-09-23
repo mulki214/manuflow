@@ -168,6 +168,35 @@ def purchase_order_pdf_bytes(order: Any) -> bytes:
     return stream.getvalue()
 
 
+def purchase_request_pdf_bytes(request: Any) -> bytes:
+    """Printable Purchase Request with verifiable submit/review QR signatures."""
+    import qrcode
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table
+
+    stream = BytesIO()
+    document = SimpleDocTemplate(stream, pagesize=A4, rightMargin=14 * mm, leftMargin=14 * mm, topMargin=12 * mm, bottomMargin=12 * mm)
+    styles = getSampleStyleSheet()
+    center = ParagraphStyle("pr-center", parent=styles["Normal"], alignment=TA_CENTER)
+    story = [Paragraph("<b>PURCHASE REQUEST</b>", styles["Title"]), Paragraph(f"<b>{request.request_number}</b>", center), Spacer(1, 5 * mm)]
+    story.append(Table([["Date", request.request_date.strftime("%d/%m/%Y"), "Status", request.status], ["Requested By", request.created_by_name, "Department", request.department_code or "-"], ["Notes", request.notes or "-", "Reviewed By", request.reviewed_by_name or "Pending review"]], colWidths=[28 * mm, 55 * mm, 35 * mm, 60 * mm], style=[("GRID", (0, 0), (-1, -1), .3, colors.grey), ("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    rows = [["No", "Product", "Description", "Qty", "Unit", "Remark"]]
+    for item in request.items:
+        rows.append([item.line_number, item.product_code, Paragraph(item.description, styles["BodyText"]), f"{item.quantity:,.3f}", item.unit, item.remark])
+    story.extend([Spacer(1, 5 * mm), Table(rows, repeatRows=1, colWidths=[10 * mm, 27 * mm, 62 * mm, 22 * mm, 18 * mm, 39 * mm], style=[("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4F659F")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("GRID", (0, 0), (-1, -1), .3, colors.grey), ("VALIGN", (0, 0), (-1, -1), "TOP")])])
+    def qr(payload: str | None):
+        if not payload: return Paragraph("Pending review", center)
+        image = BytesIO(); qrcode.make(payload).save(image, format="PNG"); image.seek(0)
+        return Image(image, width=25 * mm, height=25 * mm)
+    story.extend([Spacer(1, 9 * mm), Table([[Paragraph("<b>Submitted By</b>", center), Paragraph("<b>Reviewed By</b>", center)], [qr(request.creator_qr_payload), qr(request.review_qr_payload)], [Paragraph(request.created_by_name, center), Paragraph(request.reviewed_by_name or "-", center)]], colWidths=[65 * mm, 65 * mm], hAlign="CENTER", style=[("ALIGN", (0, 0), (-1, -1), "CENTER")])])
+    document.build(story)
+    return stream.getvalue()
+
+
 def sales_order_pdf_bytes(order: Any) -> bytes:
     """Render a printable Sales Order using the same signature layout as PO."""
     import qrcode

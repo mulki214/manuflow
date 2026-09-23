@@ -11,6 +11,7 @@ from app.models import (
     ProductCategory,
     ProductSupplySource,
     PurchaseOrderStatus,
+    PurchaseRequestStatus,
     ReceivingSourceType,
     ReceivingStatus,
     ReceivingTransportSource,
@@ -1499,6 +1500,75 @@ class WarehouseMaterialTransferResponse(BaseModel):
 
 class PaginatedWarehouseMaterialTransfers(BaseModel):
     items: list[WarehouseMaterialTransferResponse]
+    total: int
+    page: int
+    size: int
+
+
+class PurchaseRequestItemInput(BaseModel):
+    product_code: str = Field(min_length=1, max_length=30)
+    quantity: Decimal = Field(gt=0, max_digits=14, decimal_places=3)
+    unit: UnitOfMeasure
+    remark: str = Field(default="", max_length=2000)
+
+    @model_validator(mode="after")
+    def validate_quantity(self) -> "PurchaseRequestItemInput":
+        require_whole_quantity(self.quantity, self.unit.value, "Quantity")
+        return self
+
+
+class PurchaseRequestCreate(BaseModel):
+    request_date: date
+    notes: str = Field(default="", max_length=4000)
+    items: list[PurchaseRequestItemInput] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def unique_products(self) -> "PurchaseRequestCreate":
+        if len({item.product_code for item in self.items}) != len(self.items):
+            raise ValueError("A product can only appear once in a Purchase Request")
+        return self
+
+
+class PurchaseRequestRejection(BaseModel):
+    reason: str = Field(min_length=3, max_length=2000)
+
+
+class PurchaseRequestItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    line_number: int
+    product_code: str
+    part_name: str
+    part_no: str
+    description: str
+    quantity: Decimal
+    unit: str
+    remark: str
+
+
+class PurchaseRequestResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    request_number: str
+    request_date: date
+    department_code: str | None
+    notes: str
+    status: PurchaseRequestStatus
+    created_by: str
+    created_by_name: str
+    reviewed_by: str | None
+    reviewed_by_name: str | None
+    reviewed_at: datetime | None
+    rejection_reason: str | None
+    can_review: bool
+    creator_qr_payload: str
+    review_qr_payload: str | None
+    items: list[PurchaseRequestItemResponse]
+    created_at: datetime
+    updated_at: datetime
+
+
+class PaginatedPurchaseRequests(BaseModel):
+    items: list[PurchaseRequestResponse]
     total: int
     page: int
     size: int
