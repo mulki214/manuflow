@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:file_saver/file_saver.dart';
 
 import '../../core/api_client.dart';
 import '../../shared/app_module_scaffold.dart';
@@ -158,6 +159,27 @@ class _DeliveryPageState extends State<DeliveryPage> {
     }
   }
 
+  Future<void> _downloadDeliveryNote(Map<String, dynamic> record) async {
+    final number = record['delivery_number'].toString();
+    try {
+      final bytes = await widget.auth.api.getBytes(
+        '/delivery/${Uri.encodeComponent(number)}/pdf',
+      );
+      await FileSaver.instance.saveFile(
+        name: 'delivery-note-${number.replaceAll('/', '-')}',
+        bytes: bytes,
+        fileExtension: 'pdf',
+        mimeType: MimeType.pdf,
+      );
+    } on ApiException catch (exception) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(exception.message)));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) => AppModuleScaffold(
     auth: widget.auth,
@@ -267,8 +289,16 @@ class _DeliveryPageState extends State<DeliveryPage> {
                                 if (action == 'reverse') {
                                   _reverse(item);
                                 }
+                                if (action == 'pdf') {
+                                  _downloadDeliveryNote(item);
+                                }
                               },
                               itemBuilder: (_) => [
+                                if (item['status']?.toString() != 'reversed')
+                                  const PopupMenuItem(
+                                    value: 'pdf',
+                                    child: Text('Download Surat Jalan'),
+                                  ),
                                 if (canConfirm)
                                   const PopupMenuItem(
                                     value: 'deliver',

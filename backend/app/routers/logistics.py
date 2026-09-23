@@ -1,13 +1,15 @@
 from datetime import date, datetime, timezone
 from decimal import Decimal
+from types import SimpleNamespace
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
 from app.dependencies import get_current_user
+from app.document_services import delivery_note_pdf_bytes
 from app.inventory_services import apply_stock_delta, grams
 from app.logistics_services import delivery_number, finish_good_number
 from app.models import (
@@ -701,6 +703,77 @@ async def get_delivery(
     if not record:
         raise HTTPException(status_code=404, detail="Delivery not found")
     return delivery_response(record, await delivery_lines(db, record))
+
+
+@delivery_router.get("/{delivery_number_value}/pdf")
+async def download_delivery_note_pdf(
+    delivery_number_value: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    record = await db.get(Delivery, delivery_number_value)
+    if not record:
+        raise HTTPException(status_code=404, detail="Delivery not found")
+    if record.status == DeliveryStatus.reversed:
+        raise HTTPException(status_code=409, detail="Reversed Delivery cannot be printed")
+
+    order = await db.get(SalesOrder, record.sales_order_number)
+    if not order:
+        raise HTTPException(status_code=404, detail="Sales Order for this Delivery not found")
+    lines = await delivery_lines(db, record)
+    if not lines:
+        lines = [
+            DeliveryLine(
+                delivery_number=record.delivery_number,
+                sales_order_item_id=record.sales_order_item_id,
+                lot_id=record.lot_id,
+                product_code=record.product_code,
+                lot_number=record.lot_number,
+                quantity=record.quantity,
+                unit=record.unit,
+            )
+        ]
+    product_codes = {line.product_code for line in lines}
+    products = list((await db.execute(select(Product).where(Product.code.in_(product_codes)))).scalars())
+    descriptions = {product.code: product.description for product in products}
+    creator = await db.get(User, record.performed_by)
+    transportation = await db.get(Transportation, record.transportation_code) if record.transportation_code else None
+    document = SimpleNamespace(
+        delivery_number=record.delivery_number,
+        delivery_date=record.delivery_date,
+        sales_order_number=record.sales_order_number,
+        customer_name=record.customer_name,
+        ship_to_name=order.ship_to_name,
+        ship_to_address=order.ship_to_address,
+        ship_to_contact=f"{order.ship_to_contact_person} — {order.ship_to_phone}",
+        vehicle_number=record.vehicle_number,
+        transportation_name=transportation.name if transportation else record.transportation_code,
+        driver_name=record.driver_name,
+        status_label=(
+            "Delivered"
+            if record.status in {DeliveryStatus.delivered, DeliveryStatus.posted}
+            else "Dispatched"
+        ),
+        notes=record.notes,
+        prepared_by_name=f"{creator.first_name} {creator.last_name}".strip() if creator else record.performed_by,
+        lines=[
+            SimpleNamespace(
+                product_code=line.product_code,
+                description=descriptions.get(line.product_code, ""),
+                lot_number=line.lot_number,
+                quantity=line.quantity,
+                unit=line.unit,
+            )
+            for line in lines
+        ],
+    )
+    content = delivery_note_pdf_bytes(document)
+    safe_number = record.delivery_number.replace("/", "-")
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="delivery-note-{safe_number}.pdf"'},
+    )
 
 
 @delivery_router.post("/{delivery_number_value}/deliver", response_model=DeliveryResponse)

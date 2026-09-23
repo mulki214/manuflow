@@ -2,6 +2,7 @@ from datetime import date, datetime
 
 import pytest
 
+from app.document_services import delivery_note_pdf_bytes
 from app.logistics_services import format_document_number
 from app.middleware import is_delivery_path, is_finish_good_path
 from app.models import Delivery, DeliveryStatus, FinishGoodReceipt, FinishGoodStatus
@@ -105,6 +106,7 @@ def test_finish_good_and_delivery_routes_expose_the_required_lifecycle_actions()
     assert ("/delivery/lookup/finish-good-lots", "GET") in delivery_routes
     assert ("/delivery/batch", "POST") in delivery_routes
     assert ("/delivery/{delivery_number_value}", "GET") in delivery_routes
+    assert ("/delivery/{delivery_number_value}/pdf", "GET") in delivery_routes
     assert ("/delivery/{delivery_number_value}/deliver", "POST") in delivery_routes
     assert ("/delivery/{delivery_number_value}/reverse", "POST") in delivery_routes
 
@@ -125,6 +127,39 @@ def test_delivery_batch_rejects_duplicate_item_and_lot() -> None:
 
 def test_delivery_confirmation_accepts_optional_notes() -> None:
     assert DeliveryConfirm(notes="Received by customer").notes == "Received by customer"
+
+
+def test_delivery_note_pdf_contains_a_delivery_document() -> None:
+    from types import SimpleNamespace
+
+    document = delivery_note_pdf_bytes(
+        SimpleNamespace(
+            delivery_number="DLV-210826-000",
+            delivery_date=date(2026, 8, 21),
+            sales_order_number="SO-001",
+            customer_name="Customer A",
+            ship_to_name="Customer Warehouse",
+            ship_to_address="Industrial Estate",
+            ship_to_contact="Receiver — 0812",
+            vehicle_number="B 1234 ABC",
+            transportation_name="Truck",
+            driver_name="Driver A",
+            status_label="Dispatched",
+            notes="Handle carefully",
+            prepared_by_name="Warehouse Staff",
+            lines=[
+                SimpleNamespace(
+                    product_code="FG-001",
+                    description="Finished Product",
+                    lot_number="LOT-1",
+                    quantity=10,
+                    unit="pcs",
+                )
+            ],
+        )
+    )
+    assert document.startswith(b"%PDF")
+    assert len(document) > 1000
 
 
 def test_delivery_batch_accepts_an_excess_reason() -> None:

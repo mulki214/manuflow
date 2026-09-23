@@ -273,3 +273,106 @@ def sales_order_pdf_bytes(order: Any) -> bytes:
     )
     document.build(story)
     return stream.getvalue()
+
+
+def delivery_note_pdf_bytes(delivery: Any) -> bytes:
+    """Render a delivery note with the same A4 visual language as PO/SO."""
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table
+
+    stream = BytesIO()
+    document = SimpleDocTemplate(
+        stream,
+        pagesize=A4,
+        rightMargin=14 * mm,
+        leftMargin=14 * mm,
+        topMargin=12 * mm,
+        bottomMargin=12 * mm,
+        title=f"Delivery Note {delivery.delivery_number}",
+    )
+    styles = getSampleStyleSheet()
+    center = ParagraphStyle("delivery-center", parent=styles["Normal"], alignment=TA_CENTER)
+    story = [
+        Paragraph("<b>SURAT JALAN</b>", styles["Title"]),
+        Paragraph(f"<b>{delivery.delivery_number}</b>", center),
+        Spacer(1, 5 * mm),
+        Table(
+            [
+                [
+                    "Delivery Date",
+                    delivery.delivery_date.strftime("%d/%m/%Y"),
+                    "Sales Order",
+                    delivery.sales_order_number,
+                ],
+                ["Customer", delivery.customer_name, "Ship To", delivery.ship_to_name],
+                [
+                    "Address",
+                    Paragraph(delivery.ship_to_address, styles["BodyText"]),
+                    "Contact",
+                    delivery.ship_to_contact,
+                ],
+                ["Vehicle", delivery.vehicle_number or "-", "Transportation", delivery.transportation_name or "-"],
+                ["Driver", delivery.driver_name or "-", "Status", delivery.status_label],
+            ],
+            colWidths=[28 * mm, 55 * mm, 35 * mm, 60 * mm],
+            style=[("VALIGN", (0, 0), (-1, -1), "TOP"), ("GRID", (0, 0), (-1, -1), 0.3, colors.grey)],
+        ),
+        Spacer(1, 5 * mm),
+    ]
+    rows = [["No", "Product", "Description", "Lot", "Qty", "Unit"]]
+    for index, line in enumerate(delivery.lines, start=1):
+        rows.append(
+            [
+                index,
+                line.product_code,
+                Paragraph(line.description or "-", styles["BodyText"]),
+                line.lot_number,
+                f"{line.quantity:,.3f}",
+                "grams" if line.unit == "gram" else line.unit,
+            ]
+        )
+    story.append(
+        Table(
+            rows,
+            repeatRows=1,
+            colWidths=[10 * mm, 27 * mm, 65 * mm, 27 * mm, 24 * mm, 17 * mm],
+            style=[
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4F659F")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("GRID", (0, 0), (-1, -1), 0.3, colors.grey),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ALIGN", (4, 1), (-1, -1), "RIGHT"),
+            ],
+        )
+    )
+    if delivery.notes:
+        story.extend([Spacer(1, 4 * mm), Paragraph(f"<b>Notes:</b> {delivery.notes}", styles["BodyText"])])
+    story.extend(
+        [
+            Spacer(1, 10 * mm),
+            Table(
+                [
+                    [
+                        Paragraph("<b>Prepared By</b>", center),
+                        Paragraph("<b>Driver</b>", center),
+                        Paragraph("<b>Received By</b>", center),
+                    ],
+                    ["\n\n\n\n", "\n\n\n\n", "\n\n\n\n"],
+                    [
+                        Paragraph(delivery.prepared_by_name, center),
+                        Paragraph(delivery.driver_name or "-", center),
+                        Paragraph("Name / Signature / Date", center),
+                    ],
+                ],
+                colWidths=[55 * mm, 55 * mm, 55 * mm],
+                hAlign="CENTER",
+                style=[("GRID", (0, 0), (-1, -1), 0.3, colors.grey), ("VALIGN", (0, 0), (-1, -1), "MIDDLE")],
+            ),
+        ]
+    )
+    document.build(story)
+    return stream.getvalue()
