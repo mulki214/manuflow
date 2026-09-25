@@ -683,6 +683,7 @@ async def delivery_sales_order_items(
             "sales_order_number": order.sales_order_number,
             "customer_name": order.customer_name,
             "product_code": item.product_code,
+            "product_name": item.part_name,
             "description": item.description,
             "unit": item.unit,
             "outstanding_quantity": display_quantity(item.quantity_grams - item.delivered_quantity, item.unit),

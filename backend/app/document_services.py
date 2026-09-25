@@ -180,6 +180,45 @@ def purchase_order_pdf_bytes(order: Any) -> bytes:
     return stream.getvalue()
 
 
+def quotation_pdf_bytes(quotation: Any) -> bytes:
+    """Render a standalone customer price quotation."""
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table
+
+    stream = BytesIO()
+    document = SimpleDocTemplate(stream, pagesize=A4, rightMargin=14 * mm, leftMargin=14 * mm, topMargin=12 * mm, bottomMargin=12 * mm, title=f"Quotation {quotation.quotation_number}")
+    styles = getSampleStyleSheet()
+    center = ParagraphStyle("quotation-center", parent=styles["Normal"], alignment=TA_CENTER)
+    right = ParagraphStyle("quotation-right", parent=styles["Normal"], alignment=TA_RIGHT)
+    story = [
+        Paragraph("<b>QUOTATION</b>", styles["Title"]),
+        Paragraph(f"<b>{quotation.quotation_number}</b>", center),
+        Spacer(1, 5 * mm),
+        Table(
+            [["Quotation Date", quotation.quotation_date.strftime("%d/%m/%Y"), "Valid Until", quotation.valid_until.strftime("%d/%m/%Y")], ["Customer", quotation.customer_name, "Contact", quotation.customer_contact_person or "-"], ["Address", quotation.customer_address, "Phone", quotation.customer_phone or "-"]],
+            colWidths=[30 * mm, 62 * mm, 30 * mm, 62 * mm],
+            style=[("VALIGN", (0, 0), (-1, -1), "TOP"), ("GRID", (0, 0), (-1, -1), 0.3, colors.grey)],
+        ),
+        Spacer(1, 5 * mm),
+    ]
+    rows = [["No", "Product", "Description", "Qty", "Unit", "Price", "Amount"]]
+    for item in quotation.items:
+        rows.append([item.line_number, item.part_name, Paragraph(item.description, styles["BodyText"]), format_document_quantity(item.quantity, item.unit), "grams" if item.unit == "gram" else item.unit, f"{item.unit_price:,.2f}", f"{item.amount:,.2f}"])
+    story.append(Table(rows, repeatRows=1, colWidths=[9 * mm, 28 * mm, 53 * mm, 19 * mm, 16 * mm, 28 * mm, 28 * mm], style=[("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4F659F")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("GRID", (0, 0), (-1, -1), 0.3, colors.grey), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("ALIGN", (3, 1), (-1, -1), "RIGHT")]))
+    story.extend([Spacer(1, 4 * mm), Table([["Subtotal", f"{quotation.currency} {quotation.subtotal:,.2f}"], ["Discount", f"{quotation.currency} {quotation.discount_amount:,.2f}"], [f"{quotation.tax_label} ({quotation.tax_rate}%)", f"{quotation.currency} {quotation.tax_amount:,.2f}"], ["Grand Total", f"{quotation.currency} {quotation.grand_total:,.2f}"]], colWidths=[125 * mm, 48 * mm], style=[("GRID", (0, 0), (-1, -1), 0.3, colors.grey), ("ALIGN", (1, 0), (1, -1), "RIGHT"), ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold")])])
+    if quotation.payment_terms:
+        story.extend([Spacer(1, 4 * mm), Paragraph("<b>Payment Terms</b>", styles["Heading4"]), Paragraph(quotation.payment_terms.replace("\n", "<br/>"), styles["BodyText"])])
+    if quotation.notes:
+        story.extend([Spacer(1, 3 * mm), Paragraph("<b>Notes</b>", styles["Heading4"]), Paragraph(quotation.notes.replace("\n", "<br/>"), styles["BodyText"])])
+    story.extend([Spacer(1, 12 * mm), Paragraph(f"Prepared by: {quotation.created_by_name}", right)])
+    document.build(story)
+    return stream.getvalue()
+
+
 def purchase_request_pdf_bytes(request: Any) -> bytes:
     """Printable Purchase Request with verifiable submit/review QR signatures."""
     import qrcode

@@ -5,6 +5,7 @@ import '../../core/api_client.dart';
 import '../../shared/app_sidebar.dart';
 import '../../shared/crud_widgets.dart';
 import '../../shared/module_navigation.dart';
+import '../../shared/modal_widgets.dart';
 import '../../shared/product_qr_label_dialog.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
@@ -853,7 +854,7 @@ class _SalesOrderPageState extends State<SalesOrderPage> {
       builder: (context) => AlertDialog(
         title: Row(
           children: [
-            Expanded(child: Text(order.salesOrderNumber)),
+            Expanded(child: CopyableCodeText(order.salesOrderNumber)),
             _status(order.status),
             const SizedBox(width: 6),
             _fulfillmentChip(order.fulfillmentStatus),
@@ -862,7 +863,7 @@ class _SalesOrderPageState extends State<SalesOrderPage> {
         content: SizedBox(
           width: 850,
           height: 650,
-          child: SingleChildScrollView(
+          child: ModalScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -874,14 +875,13 @@ class _SalesOrderPageState extends State<SalesOrderPage> {
                       'PO Receipt Date',
                       _formatDate(order.poReceiptDate),
                     ),
+                    _detail('Customer PO Number', order.customerPoNumber),
                     _detail(
-                      'Customer PO',
-                      '${order.customerPoNumber} • ${_formatDate(order.customerPoDate)}',
+                      'Customer PO Date',
+                      _formatDate(order.customerPoDate),
                     ),
-                    _detail(
-                      'Customer',
-                      '${order.customerCode} — ${order.customerName}',
-                    ),
+                    _detail('Customer Code', order.customerCode),
+                    _detail('Customer', order.customerName),
                     _detail('Order Type', salesOrderTypeLabel(order.orderType)),
                     _detail(
                       'Fulfillment',
@@ -903,8 +903,7 @@ class _SalesOrderPageState extends State<SalesOrderPage> {
                 ),
                 const SizedBox(height: 18),
                 Text('Items', style: Theme.of(context).textTheme.titleMedium),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
+                ModalHorizontalScroll(
                   child: DataTable(
                     columns: const [
                       DataColumn(label: Text('NO')),
@@ -930,7 +929,7 @@ class _SalesOrderPageState extends State<SalesOrderPage> {
                                   child: Text(entry.$2.description),
                                 ),
                               ),
-                              DataCell(Text(entry.$2.partNo)),
+                              DataCell(CopyableCodeText(entry.$2.partNo)),
                               DataCell(
                                 Text(_formatNumber(entry.$2.quantityGrams)),
                               ),
@@ -1064,7 +1063,11 @@ class _SalesOrderPageState extends State<SalesOrderPage> {
           style: const TextStyle(color: Color(0xFF667085), fontSize: 12),
         ),
         const SizedBox(height: 4),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+        DetailValue(
+          label: label,
+          value: value,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
       ],
     ),
   );

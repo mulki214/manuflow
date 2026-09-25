@@ -4,6 +4,7 @@ import '../../core/api_client.dart';
 import '../../shared/app_sidebar.dart';
 import '../../shared/crud_widgets.dart';
 import '../../shared/mobile_product_scanner.dart';
+import '../../shared/modal_widgets.dart';
 import '../../shared/module_navigation.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
@@ -594,18 +595,18 @@ class _ReceivingPageState extends State<ReceivingPage> {
     final fields = <(String, String)>[
       ('Receipt Number', record.receiptNumber),
       ('Receipt Date', _displayDate(record.receiptDate)),
-      ('Product', '${record.productCode} — ${record.productName}'),
+      ('Product Code', record.productCode),
+      ('Product', record.productName),
       ('Description', record.description),
       ('Lot Number', record.lotNumber),
       (
         'Quantity',
         '${_number(record.quantityGrams)} ${unitLabel(record.unit)}',
       ),
-      ('Plant', '${record.plantCode} — ${record.plantName}'),
-      (
-        'Storage Location',
-        '${record.storageLocationCode} — ${record.storageLocationName}',
-      ),
+      ('Plant Code', record.plantCode),
+      ('Plant', record.plantName),
+      ('Storage Location Code', record.storageLocationCode),
+      ('Storage Location', record.storageLocationName),
       ('From / Source', record.source),
       ('Document Number', record.documentNumber ?? '-'),
       ('PO Number', record.poNumber ?? '-'),
@@ -627,13 +628,13 @@ class _ReceivingPageState extends State<ReceivingPage> {
       builder: (context) => AlertDialog(
         title: Row(
           children: [
-            Expanded(child: Text(record.receiptNumber)),
+            Expanded(child: CopyableCodeText(record.receiptNumber)),
             _statusChip(record.status),
           ],
         ),
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 700, maxHeight: 650),
-          child: SingleChildScrollView(
+          child: ModalScrollView(
             child: Wrap(
               spacing: 24,
               runSpacing: 14,
@@ -651,8 +652,9 @@ class _ReceivingPageState extends State<ReceivingPage> {
                               fontSize: 12,
                             ),
                           ),
-                          Text(
-                            field.$2,
+                          DetailValue(
+                            label: field.$1,
+                            value: field.$2,
                             style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
                         ],

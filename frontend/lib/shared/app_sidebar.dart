@@ -8,6 +8,7 @@ enum AppModule {
   user(Icons.people_outline, 'User'),
   masterData(Icons.dataset_outlined, 'Master Data'),
   salesOrder(Icons.shopping_cart_outlined, 'Sales Order'),
+  quotation(Icons.request_quote_outlined, 'Quotation'),
   purchasing(Icons.shopping_bag_outlined, 'Purchasing'),
   purchaseRequest(Icons.playlist_add_outlined, 'Purchase Request'),
   receiving(Icons.move_to_inbox_outlined, 'Receiving'),
@@ -17,6 +18,7 @@ enum AppModule {
   finishGood(Icons.inventory_2_outlined, 'Finish Good'),
   delivery(Icons.local_shipping_outlined, 'Delivery'),
   reporting(Icons.bar_chart_outlined, 'Reporting'),
+  settings(Icons.settings_outlined, 'Settings'),
   scan(Icons.qr_code_scanner_outlined, 'Scan QR');
 
   const AppModule(this.icon, this.label);
@@ -70,6 +72,7 @@ class AppSidebar extends StatelessWidget {
                         switch (module) {
                           AppModule.purchasing => auth.canAccessPurchasing,
                           AppModule.salesOrder => auth.canAccessSalesOrder,
+                          AppModule.quotation => auth.canAccessSalesOrder,
                           AppModule.receiving => auth.canAccessReceiving,
                           AppModule.warehouse => auth.canAccessWarehouse,
                           AppModule.production => auth.canAccessProduction,
@@ -85,18 +88,6 @@ class AppSidebar extends StatelessWidget {
             ),
           ),
           const Divider(color: Color(0xFF344054)),
-          if (onChangePassword != null)
-            ListTile(
-              leading: const Icon(
-                Icons.password_outlined,
-                color: Color(0xFF98A2B3),
-              ),
-              title: const Text(
-                'Change Password',
-                style: TextStyle(color: Color(0xFFD0D5DD), fontSize: 13),
-              ),
-              onTap: onChangePassword,
-            ),
           ListTile(
             leading: CircleAvatar(
               child: Text(auth.currentUser?.initials ?? 'U'),

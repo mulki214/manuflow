@@ -9,9 +9,11 @@ import '../features/production/production_page.dart';
 import '../features/purchasing/purchasing_page.dart';
 import '../features/purchase_request/purchase_request_page.dart';
 import '../features/quality/quality_page.dart';
+import '../features/quotation/quotation_page.dart';
 import '../features/receiving/receiving_page.dart';
 import '../features/reporting/reporting_page.dart';
 import '../features/sales_order/sales_order_page.dart';
+import '../features/settings/settings_page.dart';
 import '../features/scan/scan_hub_page.dart';
 import '../features/warehouse/warehouse_page.dart';
 import 'app_sidebar.dart';
@@ -34,6 +36,9 @@ void navigateToModule(
     AppModule.salesOrder when auth.canAccessSalesOrder => SalesOrderPage(
       auth: auth,
     ),
+    AppModule.quotation when auth.canAccessSalesOrder => QuotationPage(
+      auth: auth,
+    ),
     AppModule.purchasing when auth.canAccessPurchasing => PurchasingPage(
       auth: auth,
     ),
@@ -53,6 +58,7 @@ void navigateToModule(
     ),
     AppModule.delivery when auth.canAccessDelivery => DeliveryPage(auth: auth),
     AppModule.reporting => ReportingPage(auth: auth),
+    AppModule.settings => SettingsPage(auth: auth),
     AppModule.scan => ScanHubPage(auth: auth),
     _ => null,
   };

@@ -5,6 +5,8 @@ import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import 'modal_widgets.dart';
+
 /// Printable/downloadable QR label. The product payload is deliberately the
 /// stable product code consumed by the API QR resolver.
 class ProductQrLabelDialog extends StatefulWidget {
@@ -75,7 +77,7 @@ class _ProductQrLabelDialogState extends State<ProductQrLabelDialog> {
       children: [
         QrPayloadImage(data: widget._payload, size: 240),
         const SizedBox(height: 12),
-        Text(
+        CopyableCodeText(
           widget.productCode,
           style: const TextStyle(fontWeight: FontWeight.w700),
         ),
@@ -168,7 +170,7 @@ class _ProductQrLabelPageState extends State<ProductQrLabelPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
+            CopyableCodeText(
               widget.productCode,
               style: Theme.of(
                 context,

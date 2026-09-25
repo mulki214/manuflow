@@ -5,6 +5,7 @@ import '../../shared/app_sidebar.dart';
 import '../../shared/crud_widgets.dart';
 import '../../shared/module_navigation.dart';
 import '../../shared/mobile_product_scanner.dart';
+import '../../shared/modal_widgets.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
 import '../master_data/master_data_page.dart';
@@ -549,22 +550,20 @@ class _WarehousePageState extends State<WarehousePage> {
       builder: (context) => AlertDialog(
         title: Row(
           children: [
-            Expanded(child: Text(item.number)),
+            Expanded(child: CopyableCodeText(item.number)),
             _statusChip(item.status),
           ],
         ),
         content: SizedBox(
           width: 720,
-          child: SingleChildScrollView(
+          child: ModalScrollView(
             child: Wrap(
               spacing: 24,
               runSpacing: 16,
               children: [
                 _detailItem('Date', _date(item.date)),
-                _detailItem(
-                  'Product',
-                  '${item.productCode} — ${item.productName}',
-                ),
+                _detailItem('Product Code', item.productCode),
+                _detailItem('Product', item.productName),
                 _detailItem('Description', item.description),
                 _detailItem('Lot', item.lotNumber),
                 _detailItem(
@@ -617,7 +616,11 @@ class _WarehousePageState extends State<WarehousePage> {
           style: const TextStyle(color: Color(0xFF667085), fontSize: 12),
         ),
         const SizedBox(height: 3),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+        DetailValue(
+          label: label,
+          value: value,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
       ],
     ),
   );

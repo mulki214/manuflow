@@ -130,6 +130,8 @@ class InventoryMovementType(str, enum.Enum):
     warehouse_out = "warehouse_out"
     warehouse_in = "warehouse_in"
     warehouse_reversal = "warehouse_reversal"
+    stock_rebalance_in = "stock_rebalance_in"
+    stock_rebalance_out = "stock_rebalance_out"
 
 
 class ConsumableDispositionType(str, enum.Enum):
@@ -219,6 +221,13 @@ class DailyPurchaseRequestSequence(Base):
 
 class DailySalesOrderSequence(Base):
     __tablename__ = "daily_sales_order_sequences"
+
+    sequence_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    last_value: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class DailyQuotationSequence(Base):
+    __tablename__ = "daily_quotation_sequences"
 
     sequence_date: Mapped[date] = mapped_column(Date, primary_key=True)
     last_value: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -464,6 +473,65 @@ class PurchaseOrderItem(Base):
     remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
     purchase_order: Mapped[PurchaseOrder] = relationship(back_populates="items")
+
+
+class Quotation(Base):
+    __tablename__ = "quotations"
+
+    quotation_number: Mapped[str] = mapped_column(String(20), primary_key=True)
+    quotation_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    valid_until: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    customer_code: Mapped[str] = mapped_column(
+        ForeignKey("corporations.code", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    customer_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    customer_address: Mapped[str] = mapped_column(Text, nullable=False)
+    customer_phone: Mapped[str] = mapped_column(String(32), nullable=False)
+    customer_contact_person: Mapped[str] = mapped_column(String(150), nullable=False)
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    payment_terms: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="IDR")
+    subtotal: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    discount_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False, default=0)
+    tax_label: Mapped[str] = mapped_column(String(50), nullable=False, default="PPN")
+    tax_rate: Mapped[Decimal] = mapped_column(Numeric(6, 3), nullable=False, default=0)
+    tax_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False, default=0)
+    grand_total: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    department_code: Mapped[str] = mapped_column(
+        ForeignKey("departments.code", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    items: Mapped[list["QuotationItem"]] = relationship(
+        back_populates="quotation", cascade="all, delete-orphan", order_by="QuotationItem.line_number", lazy="selectin"
+    )
+
+
+class QuotationItem(Base):
+    __tablename__ = "quotation_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    quotation_number: Mapped[str] = mapped_column(
+        ForeignKey("quotations.quotation_number", ondelete="CASCADE"), nullable=False, index=True
+    )
+    line_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    product_code: Mapped[str] = mapped_column(
+        ForeignKey("products.code", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    part_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    part_no: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(14, 3), nullable=False)
+    unit: Mapped[str] = mapped_column(String(10), nullable=False)
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    quotation: Mapped[Quotation] = relationship(back_populates="items")
 
 
 class PurchaseRequest(Base):
@@ -777,6 +845,50 @@ class ProductLot(Base):
     initial_quantity_grams: Mapped[Decimal] = mapped_column(Numeric(20, 3), nullable=False)
     current_quantity_grams: Mapped[Decimal] = mapped_column(Numeric(20, 3), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class DailyStockRebalancingSequence(Base):
+    __tablename__ = "daily_stock_rebalancing_sequences"
+
+    sequence_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    last_value: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class StockRebalancing(Base):
+    __tablename__ = "stock_rebalancings"
+
+    rebalance_number: Mapped[str] = mapped_column(String(20), primary_key=True)
+    rebalance_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    lines: Mapped[list["StockRebalancingLine"]] = relationship(
+        back_populates="rebalance", cascade="all, delete-orphan", order_by="StockRebalancingLine.line_number"
+    )
+
+
+class StockRebalancingLine(Base):
+    __tablename__ = "stock_rebalancing_lines"
+    __table_args__ = (UniqueConstraint("rebalance_number", "line_number", name="uq_stock_rebalance_line"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    rebalance_number: Mapped[str] = mapped_column(ForeignKey("stock_rebalancings.rebalance_number", ondelete="RESTRICT"), nullable=False, index=True)
+    line_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    lot_id: Mapped[int] = mapped_column(ForeignKey("product_lots.id", ondelete="RESTRICT"), nullable=False, index=True)
+    product_code: Mapped[str] = mapped_column(String(30), nullable=False)
+    product_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    lot_number: Mapped[str] = mapped_column(String(100), nullable=False)
+    plant_code: Mapped[str] = mapped_column(String(10), nullable=False)
+    storage_location_code: Mapped[str] = mapped_column(String(20), nullable=False)
+    unit: Mapped[str] = mapped_column(String(10), nullable=False)
+    system_quantity: Mapped[Decimal] = mapped_column(Numeric(20, 3), nullable=False)
+    physical_quantity: Mapped[Decimal] = mapped_column(Numeric(20, 3), nullable=False)
+    difference_quantity: Mapped[Decimal] = mapped_column(Numeric(20, 3), nullable=False)
+    lot_quantity_after: Mapped[Decimal] = mapped_column(Numeric(20, 3), nullable=False)
+    product_stock_after: Mapped[Decimal] = mapped_column(Numeric(20, 3), nullable=False)
+    reason: Mapped[str] = mapped_column(String(100), nullable=False)
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    rebalance: Mapped[StockRebalancing] = relationship(back_populates="lines")
 
 
 class WarehouseMaterialTransfer(Base):

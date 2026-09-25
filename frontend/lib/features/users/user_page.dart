@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
 import '../../shared/app_sidebar.dart';
 import '../../shared/crud_widgets.dart';
+import '../../shared/modal_widgets.dart';
 import '../auth/auth_controller.dart';
 import '../master_data/master_data_page.dart';
 import '../purchasing/purchasing_page.dart';
@@ -147,7 +148,7 @@ class _UserPageState extends State<UserPage> {
         ),
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 520),
-          child: SingleChildScrollView(
+          child: ModalScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
@@ -662,7 +663,11 @@ class _DetailField extends StatelessWidget {
             style: const TextStyle(color: Color(0xFF667085), fontSize: 12),
           ),
           const SizedBox(height: 4),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+          DetailValue(
+            label: label,
+            value: value,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
         ],
       ),
     );

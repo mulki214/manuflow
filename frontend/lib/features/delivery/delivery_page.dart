@@ -439,6 +439,16 @@ class _DeliveryFormDialogState extends State<DeliveryFormDialog> {
           .toSet()
           .toList()
         ..sort();
+
+  String _orderLabel(String orderNumber) {
+    final order = _items.cast<Map<String, dynamic>?>().firstWhere(
+      (item) => item?['sales_order_number'] == orderNumber,
+      orElse: () => null,
+    );
+    final customerName = order?['customer_name']?.toString().trim() ?? '';
+    return customerName.isEmpty ? orderNumber : '$orderNumber - $customerName';
+  }
+
   List<Map<String, dynamic>> get _orderItems => _items
       .where((item) => item['sales_order_number'] == _salesOrderNumber)
       .toList();
@@ -582,7 +592,10 @@ class _DeliveryFormDialogState extends State<DeliveryFormDialog> {
                         .map(
                           (number) => DropdownMenuItem(
                             value: number,
-                            child: Text(number),
+                            child: Text(
+                              _orderLabel(number),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         )
                         .toList(),
@@ -748,7 +761,7 @@ class _DeliveryLineEditor extends StatelessWidget {
                   (item) => DropdownMenuItem(
                     value: item,
                     child: Text(
-                      '${item['product_code']} — ${formatQuantity(item['outstanding_quantity'], item['unit'].toString())} ${unitLabel(item['unit'].toString())}',
+                      '${item['product_name'] ?? item['description'] ?? item['product_code']} — ${formatQuantity(item['outstanding_quantity'], item['unit'].toString())} ${unitLabel(item['unit'].toString())}',
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),

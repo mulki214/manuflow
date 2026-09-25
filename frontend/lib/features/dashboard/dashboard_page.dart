@@ -5,6 +5,12 @@ import '../../shared/app_module_scaffold.dart';
 import '../../shared/app_sidebar.dart' show AppModule;
 import '../auth/auth_controller.dart';
 
+double _dashboardNumber(Object? value) {
+  if (value is num) return value.toDouble();
+  if (value is String) return double.tryParse(value) ?? 0;
+  return 0;
+}
+
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key, required this.auth});
   final AuthController auth;
@@ -156,12 +162,12 @@ class _DashboardPageState extends State<DashboardPage> {
                     const SizedBox(height: 12),
                     _WipPieChart(
                       values: {
-                        'Production': (wip?['production'] as num? ?? 0)
-                            .toDouble(),
-                        'QC': (wip?['quality'] as num? ?? 0).toDouble(),
-                        'Finish Good': (wip?['finish_good_queue'] as num? ?? 0)
-                            .toDouble(),
-                        'NG': (wip?['ng'] as num? ?? 0).toDouble(),
+                        'Production': _dashboardNumber(wip?['production']),
+                        'QC': _dashboardNumber(wip?['quality']),
+                        'Finish Good': _dashboardNumber(
+                          wip?['finish_good_queue'],
+                        ),
+                        'NG': _dashboardNumber(wip?['ng']),
                       },
                     ),
                   ],
@@ -192,7 +198,7 @@ class _OpPerformanceBarChart extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: items.map((item) {
-            final performance = (item['performance_percent'] as num).toDouble();
+            final performance = _dashboardNumber(item['performance_percent']);
             final color = performance >= 100
                 ? const Color(0xFF12B76A)
                 : performance >= 85
@@ -247,7 +253,7 @@ class _OpPerformanceBarChart extends StatelessWidget {
     );
   }
 
-  String _seconds(Object? value) => ((value as num?) ?? 0).toStringAsFixed(2);
+  String _seconds(Object? value) => _dashboardNumber(value).toStringAsFixed(2);
 }
 
 class _WipPieChart extends StatelessWidget {

@@ -4,6 +4,7 @@ import '../../core/api_client.dart';
 import '../../shared/app_sidebar.dart';
 import '../../shared/crud_widgets.dart';
 import '../../shared/module_navigation.dart';
+import '../../shared/modal_widgets.dart';
 import '../auth/auth_controller.dart';
 import '../master_data/master_data_page.dart';
 import '../purchasing/purchasing_page.dart';
@@ -472,7 +473,12 @@ class _ProductionPageState extends State<ProductionPage> {
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('${item.code} — ${item.name}'),
+        title: Row(
+          children: [
+            Expanded(child: CopyableCodeText(item.code)),
+            Text(' — ${item.name}'),
+          ],
+        ),
         content: SizedBox(
           width: 560,
           child: Wrap(
@@ -517,7 +523,11 @@ class _ProductionPageState extends State<ProductionPage> {
           style: const TextStyle(color: Color(0xFF667085), fontSize: 12),
         ),
         const SizedBox(height: 3),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+        DetailValue(
+          label: label,
+          value: value,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
       ],
     ),
   );

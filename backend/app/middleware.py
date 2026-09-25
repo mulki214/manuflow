@@ -20,6 +20,11 @@ def is_sales_order_path(path: str) -> bool:
     return path == prefix or path.startswith(f"{prefix}/")
 
 
+def is_quotation_path(path: str) -> bool:
+    prefix = f"{settings.api_prefix}/quotations"
+    return path == prefix or path.startswith(f"{prefix}/")
+
+
 def is_receiving_path(path: str) -> bool:
     prefix = f"{settings.api_prefix}/receiving"
     return path == prefix or path.startswith(f"{prefix}/")
@@ -55,7 +60,7 @@ class DepartmentModuleMiddleware(BaseHTTPMiddleware):
         protected_module: tuple[str, str, bool] | None = None
         if is_purchasing_path(request.url.path):
             protected_module = (settings.purchasing_department_code, "Purchasing", False)
-        elif is_sales_order_path(request.url.path):
+        elif is_sales_order_path(request.url.path) or is_quotation_path(request.url.path):
             protected_module = (settings.sales_department_code, "Sales", False)
         elif (
             is_receiving_path(request.url.path)

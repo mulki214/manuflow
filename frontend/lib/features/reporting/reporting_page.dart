@@ -5,6 +5,7 @@ import '../../core/api_client.dart';
 import '../../shared/app_module_scaffold.dart';
 import '../../shared/app_sidebar.dart' show AppModule;
 import '../../shared/crud_widgets.dart';
+import '../../shared/modal_widgets.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
 
@@ -151,7 +152,7 @@ class _ReportingPageState extends State<ReportingPage> {
       title: Text('${_reports[_report]} Detail'),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 620, maxHeight: 620),
-        child: SingleChildScrollView(
+        child: ModalScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -170,7 +171,10 @@ class _ReportingPageState extends State<ReportingPage> {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        Text(_displayValue(row, entry.key)),
+                        DetailValue(
+                          label: _label(entry.key),
+                          value: _displayValue(row, entry.key),
+                        ),
                       ],
                     ),
                   ),

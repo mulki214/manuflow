@@ -4,6 +4,7 @@ import '../../core/api_client.dart';
 import '../../shared/app_sidebar.dart';
 import '../../shared/crud_widgets.dart';
 import '../../shared/mobile_product_scanner.dart';
+import '../../shared/modal_widgets.dart';
 import '../../shared/module_navigation.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
@@ -318,8 +319,7 @@ class _WipProductionPageState extends State<WipProductionPage> {
             width: 760,
             child: result.isEmpty
                 ? const Center(child: Text('No stock available.'))
-                : SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
+                : ModalHorizontalScroll(
                     child: DataTable(
                       columns: const [
                         DataColumn(label: Text('PRODUCT')),
@@ -332,8 +332,16 @@ class _WipProductionPageState extends State<WipProductionPage> {
                           .map(
                             (row) => DataRow(
                               cells: [
-                                DataCell(Text(row['product_code'].toString())),
-                                DataCell(Text(row['lot_number'].toString())),
+                                DataCell(
+                                  CopyableCodeText(
+                                    row['product_code'].toString(),
+                                  ),
+                                ),
+                                DataCell(
+                                  CopyableCodeText(
+                                    row['lot_number'].toString(),
+                                  ),
+                                ),
                                 DataCell(
                                   Text(
                                     formatQuantity(
@@ -350,7 +358,9 @@ class _WipProductionPageState extends State<WipProductionPage> {
                                   ),
                                 ),
                                 DataCell(
-                                  Text(row['storage_location_code'].toString()),
+                                  CopyableCodeText(
+                                    row['storage_location_code'].toString(),
+                                  ),
                                 ),
                               ],
                             ),
@@ -896,65 +906,65 @@ class _WipProductionPageState extends State<WipProductionPage> {
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(item.number),
+        title: CopyableCodeText(item.number),
         content: SizedBox(
           width: 620,
-          child: Wrap(
-            spacing: 24,
-            runSpacing: 16,
-            children: [
-              _detail('Date', _date(item.date)),
-              _detail('Shift', item.shift),
-              _detail(
-                'Lot / Segment',
-                '${item.lotNumber}\n${item.segmentCode}',
-              ),
-              _detail('Before Process', item.beforeProcess),
-              _detail('After Process', item.afterProcess),
-              _detail('Machine', item.machineName),
-              _detail(
-                'Processed',
-                '${_number(item.processingQuantity)} ${unitLabel(item.unit)}',
-              ),
-              _detail(
-                'Good',
-                '${formatQuantity(item.goodQuantity, item.outputUnit)} ${unitLabel(item.outputUnit)}',
-              ),
-              _detail(
-                'Repair',
-                '${formatQuantity(item.repairQuantity, item.outputUnit)} ${unitLabel(item.outputUnit)}',
-              ),
-              _detail(
-                'NG',
-                '${formatQuantity(item.ngQuantity, item.outputUnit)} ${unitLabel(item.outputUnit)}',
-              ),
-              _detail(
-                'Time Range',
-                item.startedAt == null || item.endedAt == null
-                    ? '-'
-                    : '${item.startedAt!.toLocal()}\n${item.endedAt!.toLocal()}',
-              ),
-              _detail('Break', '${item.breakDurationMinutes} minutes'),
-              _detail(
-                'Calculated Cycle Time',
-                item.cycleTimeSeconds == null
-                    ? '-'
-                    : '${_number(item.cycleTimeSeconds!)} seconds',
-              ),
-              _detail(
-                'Observed Cycle Time',
-                item.observedCycleTimeSeconds == null
-                    ? '-'
-                    : '${_number(item.observedCycleTimeSeconds!)} seconds',
-              ),
-              _detail(
-                'NG Control',
-                item.ngLimitExceeded
-                    ? 'Head override: ${item.ngOverrideReason ?? '-'}'
-                    : 'Within limit',
-              ),
-              _detail('Performed By', item.performedBy),
-            ],
+          child: ModalScrollView(
+            child: Wrap(
+              spacing: 24,
+              runSpacing: 16,
+              children: [
+                _detail('Date', _date(item.date)),
+                _detail('Shift', item.shift),
+                _detail('Lot Number', item.lotNumber),
+                _detail('Segment Code', item.segmentCode),
+                _detail('Before Process', item.beforeProcess),
+                _detail('After Process', item.afterProcess),
+                _detail('Machine', item.machineName),
+                _detail(
+                  'Processed',
+                  '${_number(item.processingQuantity)} ${unitLabel(item.unit)}',
+                ),
+                _detail(
+                  'Good',
+                  '${formatQuantity(item.goodQuantity, item.outputUnit)} ${unitLabel(item.outputUnit)}',
+                ),
+                _detail(
+                  'Repair',
+                  '${formatQuantity(item.repairQuantity, item.outputUnit)} ${unitLabel(item.outputUnit)}',
+                ),
+                _detail(
+                  'NG',
+                  '${formatQuantity(item.ngQuantity, item.outputUnit)} ${unitLabel(item.outputUnit)}',
+                ),
+                _detail(
+                  'Time Range',
+                  item.startedAt == null || item.endedAt == null
+                      ? '-'
+                      : '${item.startedAt!.toLocal()}\n${item.endedAt!.toLocal()}',
+                ),
+                _detail('Break', '${item.breakDurationMinutes} minutes'),
+                _detail(
+                  'Calculated Cycle Time',
+                  item.cycleTimeSeconds == null
+                      ? '-'
+                      : '${_number(item.cycleTimeSeconds!)} seconds',
+                ),
+                _detail(
+                  'Observed Cycle Time',
+                  item.observedCycleTimeSeconds == null
+                      ? '-'
+                      : '${_number(item.observedCycleTimeSeconds!)} seconds',
+                ),
+                _detail(
+                  'NG Control',
+                  item.ngLimitExceeded
+                      ? 'Head override: ${item.ngOverrideReason ?? '-'}'
+                      : 'Within limit',
+                ),
+                _detail('Performed By', item.performedBy),
+              ],
+            ),
           ),
         ),
         actions: [
@@ -992,7 +1002,11 @@ class _WipProductionPageState extends State<WipProductionPage> {
           style: const TextStyle(color: Color(0xFF667085), fontSize: 12),
         ),
         const SizedBox(height: 3),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+        DetailValue(
+          label: label,
+          value: value,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
       ],
     ),
   );

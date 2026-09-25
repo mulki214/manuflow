@@ -5,6 +5,7 @@ import '../../core/api_client.dart';
 import '../../shared/app_sidebar.dart';
 import '../../shared/crud_widgets.dart';
 import '../../shared/module_navigation.dart';
+import '../../shared/modal_widgets.dart';
 import '../../shared/product_qr_label_dialog.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
@@ -856,7 +857,7 @@ class _PurchasingPageState extends State<PurchasingPage> {
       builder: (context) => AlertDialog(
         title: Row(
           children: [
-            Expanded(child: Text('PO ${order.poNumber}')),
+            Expanded(child: CopyableCodeText(order.poNumber)),
             _statusChip(order.status),
             IconButton(
               onPressed: () => Navigator.pop(context),
@@ -867,7 +868,7 @@ class _PurchasingPageState extends State<PurchasingPage> {
         content: SizedBox(
           width: 850,
           height: 650,
-          child: SingleChildScrollView(
+          child: ModalScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -876,10 +877,8 @@ class _PurchasingPageState extends State<PurchasingPage> {
                   runSpacing: 14,
                   children: [
                     _detail('PO Date', _formatDate(order.poDate)),
-                    _detail(
-                      'Supplier',
-                      '${order.supplierCode} — ${order.supplierName}',
-                    ),
+                    _detail('Supplier Code', order.supplierCode),
+                    _detail('Supplier', order.supplierName),
                     _detail('Quotation', order.quotationReference ?? '-'),
                     _detail(
                       'Requested Delivery',
@@ -898,8 +897,7 @@ class _PurchasingPageState extends State<PurchasingPage> {
                 const SizedBox(height: 18),
                 Text('Items', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
+                ModalHorizontalScroll(
                   child: DataTable(
                     headingRowColor: WidgetStateProperty.all(
                       const Color(0xFFF9FAFB),
@@ -929,7 +927,7 @@ class _PurchasingPageState extends State<PurchasingPage> {
                                   child: Text(entry.$2.description),
                                 ),
                               ),
-                              DataCell(Text(entry.$2.partNo)),
+                              DataCell(CopyableCodeText(entry.$2.partNo)),
                               DataCell(
                                 Text(_formatNumber(entry.$2.quantityGrams)),
                               ),
@@ -1047,7 +1045,11 @@ class _PurchasingPageState extends State<PurchasingPage> {
           style: const TextStyle(color: Color(0xFF667085), fontSize: 12),
         ),
         const SizedBox(height: 3),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+        DetailValue(
+          label: label,
+          value: value,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
       ],
     ),
   );

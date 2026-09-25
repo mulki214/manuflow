@@ -512,6 +512,100 @@ class PurchaseOrderRejection(BaseModel):
         return value.strip()
 
 
+class QuotationItemInput(BaseModel):
+    id: int | None = Field(default=None, gt=0)
+    product_code: str = Field(min_length=1, max_length=15)
+    quantity: Decimal = Field(gt=0, decimal_places=3)
+    unit: UnitOfMeasure
+    unit_price: Decimal = Field(ge=0, decimal_places=4)
+    remark: str = Field(default="", max_length=2000)
+
+    @model_validator(mode="after")
+    def validate_discrete_quantity(self) -> "QuotationItemInput":
+        from app.operational_services import require_whole_quantity
+
+        require_whole_quantity(self.quantity, self.unit.value)
+        self.remark = self.remark.strip()
+        return self
+
+
+class QuotationBase(BaseModel):
+    quotation_date: date
+    valid_until: date
+    customer_code: str = Field(min_length=1, max_length=15)
+    notes: str = Field(default="", max_length=5000)
+    payment_terms: str = Field(default="", max_length=5000)
+    discount_amount: Decimal = Field(default=Decimal("0"), ge=0, decimal_places=2)
+    tax_label: str = Field(default="PPN", min_length=1, max_length=50)
+    tax_rate: Decimal = Field(default=Decimal("0"), ge=0, le=100, decimal_places=3)
+    items: list[QuotationItemInput] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_dates(self) -> "QuotationBase":
+        if self.valid_until < self.quotation_date:
+            raise ValueError("Valid until date cannot be before quotation date")
+        self.notes = self.notes.strip()
+        self.payment_terms = self.payment_terms.strip()
+        self.tax_label = self.tax_label.strip()
+        return self
+
+
+class QuotationCreate(QuotationBase):
+    pass
+
+
+class QuotationUpdate(QuotationBase):
+    pass
+
+
+class QuotationItemResponse(BaseModel):
+    id: int
+    line_number: int
+    product_code: str
+    part_name: str
+    part_no: str
+    description: str
+    quantity: Decimal
+    unit: str
+    unit_price: Decimal
+    amount: Decimal
+    remark: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class QuotationResponse(BaseModel):
+    quotation_number: str
+    quotation_date: date
+    valid_until: date
+    customer_code: str
+    customer_name: str
+    customer_address: str
+    customer_phone: str
+    customer_contact_person: str
+    notes: str
+    payment_terms: str
+    currency: str
+    subtotal: Decimal
+    discount_amount: Decimal
+    tax_label: str
+    tax_rate: Decimal
+    tax_amount: Decimal
+    grand_total: Decimal
+    created_by: str
+    created_by_name: str
+    items: list[QuotationItemResponse]
+    created_at: datetime
+    updated_at: datetime
+
+
+class PaginatedQuotations(BaseModel):
+    items: list[QuotationResponse]
+    total: int
+    page: int
+    size: int
+
+
 class SalesOrderItemInput(BaseModel):
     id: int | None = Field(default=None, gt=0)
     product_code: str = Field(min_length=1, max_length=15)
@@ -1578,6 +1672,75 @@ class PurchaseRequestResponse(BaseModel):
 
 class PaginatedPurchaseRequests(BaseModel):
     items: list[PurchaseRequestResponse]
+    total: int
+    page: int
+    size: int
+
+
+class StockRebalanceLineInput(BaseModel):
+    lot_id: int = Field(gt=0)
+    physical_quantity: Decimal = Field(ge=0)
+    reason: str = Field(min_length=3, max_length=100)
+    notes: str = Field(default="", max_length=2000)
+
+
+class StockRebalanceCreate(BaseModel):
+    rebalance_date: date
+    notes: str = Field(default="", max_length=4000)
+    lines: list[StockRebalanceLineInput] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def unique_lots(self) -> "StockRebalanceCreate":
+        if len({line.lot_id for line in self.lines}) != len(self.lines):
+            raise ValueError("A lot can only appear once in a stock rebalancing")
+        return self
+
+
+class StockRebalanceLotResponse(BaseModel):
+    id: int
+    product_code: str
+    product_name: str
+    description: str
+    lot_number: str
+    plant_code: str
+    storage_location_code: str
+    unit: str
+    current_quantity: Decimal
+
+
+class StockRebalanceLineResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    line_number: int
+    lot_id: int
+    product_code: str
+    product_name: str
+    lot_number: str
+    plant_code: str
+    storage_location_code: str
+    unit: str
+    system_quantity: Decimal
+    physical_quantity: Decimal
+    difference_quantity: Decimal
+    lot_quantity_after: Decimal
+    product_stock_after: Decimal
+    reason: str
+    notes: str
+
+
+class StockRebalanceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    rebalance_number: str
+    rebalance_date: date
+    notes: str
+    created_by: str
+    created_by_name: str
+    created_at: datetime
+    lines: list[StockRebalanceLineResponse]
+
+
+class PaginatedStockRebalances(BaseModel):
+    items: list[StockRebalanceResponse]
     total: int
     page: int
     size: int

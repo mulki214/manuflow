@@ -7,6 +7,7 @@ import '../users/user_page.dart';
 import '../../shared/app_sidebar.dart';
 import '../../shared/crud_widgets.dart';
 import '../../shared/module_navigation.dart';
+import '../../shared/modal_widgets.dart';
 import '../../shared/product_qr_label_dialog.dart';
 import 'master_data_form_dialog.dart';
 import 'product_bom_dialog.dart';
@@ -172,7 +173,7 @@ class _MasterDataPageState extends State<MasterDataPage>
         ),
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 560),
-          child: SingleChildScrollView(
+          child: ModalScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
@@ -191,8 +192,9 @@ class _MasterDataPageState extends State<MasterDataPage>
                             ),
                           ),
                           const SizedBox(height: 4),
-                          Text(
-                            entry.$2,
+                          DetailValue(
+                            label: entry.$1,
+                            value: entry.$2,
                             style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
                         ],
