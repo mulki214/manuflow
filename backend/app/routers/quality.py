@@ -159,6 +159,7 @@ async def job_response(db: AsyncSession, record: WipLotJob) -> QualityWipJobResp
         status=record.status,
         can_complete=False,
         can_inspect=record.status == WipLotStatus.awaiting_qc and record.current_quantity > 0,
+        target_cycle_time_seconds=product.default_cycle_time_seconds if product else None,
         repair_route_code=record.repair_route_code,
         repair_step_order=record.repair_step_order,
         repair_return_process_code=record.repair_return_process_code,
