@@ -1,5 +1,5 @@
 from datetime import datetime
-from types import SimpleNamespace
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -13,9 +13,11 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.document_services import purchase_request_pdf_bytes, signed_document_payload
 from app.models import (
-    AccessLevel, DailyPurchaseRequestSequence, Product, PurchaseRequest,
-    PurchaseRequestItem, PurchaseRequestStatus, User,
+    AccessLevel, Corporation, DailyPurchaseRequestSequence, FulfillmentStatus,
+    Plant, Product, PurchaseOrder, PurchaseOrderItem, PurchaseOrderStatus,
+    PurchaseRequest, PurchaseRequestItem, PurchaseRequestStatus, User,
 )
+from app.purchasing_services import generate_purchase_order_number, payment_due_date
 from app.schemas import (
     PaginatedPurchaseRequests, PurchaseRequestCreate, PurchaseRequestRejection,
     PurchaseRequestResponse,
@@ -25,10 +27,14 @@ router = APIRouter(prefix="/purchase-requests", tags=["Purchase Requests"])
 
 
 def can_review(user: User) -> bool:
-    return user.access_level == AccessLevel.administrator or (
+    return (
         user.access_level == AccessLevel.head
         and user.department_code == settings.purchasing_department_code
     )
+
+
+def can_view_all(user: User) -> bool:
+    return user.department_code == settings.purchasing_department_code
 
 
 async def get_request(db: AsyncSession, number: str) -> PurchaseRequest:
@@ -45,6 +51,8 @@ async def response(db: AsyncSession, record: PurchaseRequest, user: User) -> Pur
     reviewer_name = f"{reviewer.first_name} {reviewer.last_name}".strip() if reviewer else None
     return PurchaseRequestResponse(
         request_number=record.request_number, request_date=record.request_date,
+        requested_delivery_date=record.requested_delivery_date,
+        delivery_plant_code=record.delivery_plant_code,
         department_code=record.department_code, notes=record.notes, status=record.status,
         created_by=record.created_by, created_by_name=creator_name,
         reviewed_by=record.reviewed_by, reviewed_by_name=reviewer_name,
@@ -64,14 +72,14 @@ async def next_number(db: AsyncSession, request_date) -> str:
 
 
 def assert_visible(record: PurchaseRequest, user: User) -> None:
-    if not can_review(user) and record.created_by != user.id:
+    if not can_view_all(user) and record.created_by != user.id:
         raise HTTPException(status_code=403, detail="You can only access your own Purchase Requests")
 
 
 @router.get("", response_model=PaginatedPurchaseRequests)
 async def list_requests(page: int = Query(1, ge=1), size: int = Query(10, ge=1, le=100), search: str | None = None, request_status: PurchaseRequestStatus | None = Query(None, alias="status"), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> PaginatedPurchaseRequests:
     filters = []
-    if not can_review(current_user): filters.append(PurchaseRequest.created_by == current_user.id)
+    if not can_view_all(current_user): filters.append(PurchaseRequest.created_by == current_user.id)
     if search: filters.append(or_(PurchaseRequest.request_number.ilike(f"%{search.strip()}%"), PurchaseRequest.created_by.ilike(f"%{search.strip()}%")))
     if request_status: filters.append(PurchaseRequest.status == request_status)
     records = list((await db.execute(select(PurchaseRequest).options(selectinload(PurchaseRequest.items)).where(*filters).order_by(PurchaseRequest.created_at.desc()).offset((page - 1) * size).limit(size))).scalars())
@@ -81,7 +89,10 @@ async def list_requests(page: int = Query(1, ge=1), size: int = Query(10, ge=1, 
 
 @router.post("", response_model=PurchaseRequestResponse, status_code=status.HTTP_201_CREATED)
 async def create_request(data: PurchaseRequestCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> PurchaseRequestResponse:
-    record = PurchaseRequest(request_number=await next_number(db, data.request_date), request_date=data.request_date, department_code=current_user.department_code, notes=data.notes.strip(), created_by=current_user.id)
+    plant = await db.get(Plant, data.delivery_plant_code)
+    if not plant:
+        raise HTTPException(status_code=422, detail="Selected delivery plant was not found")
+    record = PurchaseRequest(request_number=await next_number(db, data.request_date), request_date=data.request_date, requested_delivery_date=data.requested_delivery_date, delivery_plant_code=plant.code, department_code=current_user.department_code, notes=data.notes.strip(), created_by=current_user.id)
     for index, item in enumerate(data.items, 1):
         product = await db.get(Product, item.product_code)
         if not product: raise HTTPException(status_code=422, detail=f"Product {item.product_code} was not found")
@@ -108,7 +119,45 @@ async def approve(request_number: str, db: AsyncSession = Depends(get_db), curre
     if not can_review(current_user): raise HTTPException(status_code=403, detail="Only Head Purchasing can review Purchase Requests")
     record = await get_request(db, request_number)
     if record.status != PurchaseRequestStatus.waiting_review: raise HTTPException(status_code=409, detail="Purchase Request has already been reviewed")
-    record.status = PurchaseRequestStatus.approved; record.reviewed_by = current_user.id; record.reviewed_at = datetime.now(ZoneInfo(settings.business_timezone)); await db.commit(); return await response(db, await get_request(db, request_number), current_user)
+    if not record.delivery_plant_code or not record.requested_delivery_date:
+        raise HTTPException(status_code=422, detail="Purchase Request is missing delivery plant or requested delivery date")
+    plant = await db.get(Plant, record.delivery_plant_code)
+    if not plant:
+        raise HTTPException(status_code=422, detail="Selected delivery plant was not found")
+    products = {item.product_code: await db.get(Product, item.product_code) for item in record.items}
+    missing_supplier = [item.product_code for item, product in ((item, products[item.product_code]) for item in record.items) if not product or not product.supplier_code]
+    if missing_supplier:
+        raise HTTPException(status_code=422, detail=f"Products need an external supplier before approval: {', '.join(missing_supplier)}")
+    grouped: dict[str, list[PurchaseRequestItem]] = {}
+    for item in record.items:
+        grouped.setdefault(products[item.product_code].supplier_code, []).append(item)
+    now = datetime.now(ZoneInfo(settings.business_timezone))
+    for supplier_code, items in grouped.items():
+        supplier = await db.get(Corporation, supplier_code)
+        if not supplier or not supplier.is_supplier:
+            raise HTTPException(status_code=422, detail=f"Supplier {supplier_code} is not valid")
+        po_number = await generate_purchase_order_number(db, record.request_date)
+        order = PurchaseOrder(
+            po_number=po_number, po_date=record.request_date, supplier_code=supplier.code,
+            supplier_name=supplier.name, supplier_address=supplier.address,
+            supplier_phone=supplier.phone_number, supplier_contact_person=supplier.contact_person_name,
+            requested_delivery_date=record.requested_delivery_date, delivery_plant_code=plant.code,
+            delivery_plant_name=plant.name, delivery_address=plant.full_address,
+            notes=f"Generated from Purchase Request {record.request_number}. {record.notes}".strip(),
+            payment_terms_days=30, payment_due_date=payment_due_date(record.request_date, 30),
+            currency="IDR", subtotal=Decimal("0"), discount_amount=Decimal("0"),
+            ppn_rate=Decimal("0"), ppn_amount=Decimal("0"), pph23_rate=Decimal("0"),
+            pph23_amount=Decimal("0"), grand_total=Decimal("0"),
+            status=PurchaseOrderStatus.approved, fulfillment_status=FulfillmentStatus.open,
+            department_code=settings.purchasing_department_code, created_by=current_user.id,
+            reviewed_by=current_user.id, reviewed_at=now,
+        )
+        for line_number, item in enumerate(items, 1):
+            order.items.append(PurchaseOrderItem(line_number=line_number, product_code=item.product_code, part_name=item.part_name, part_no=item.part_no, description=item.description, quantity_grams=item.quantity, unit=item.unit, received_quantity=Decimal("0"), unit_price=Decimal("0"), amount=Decimal("0"), remark=item.remark))
+            item.purchase_order_number = po_number
+        db.add(order)
+    record.status = PurchaseRequestStatus.approved; record.reviewed_by = current_user.id; record.reviewed_at = now
+    await db.commit(); return await response(db, await get_request(db, request_number), current_user)
 
 
 @router.post("/{request_number}/reject", response_model=PurchaseRequestResponse)

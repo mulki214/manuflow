@@ -1519,6 +1519,8 @@ class PurchaseRequestItemInput(BaseModel):
 
 class PurchaseRequestCreate(BaseModel):
     request_date: date
+    requested_delivery_date: date
+    delivery_plant_code: str = Field(min_length=5, max_length=5)
     notes: str = Field(default="", max_length=4000)
     items: list[PurchaseRequestItemInput] = Field(min_length=1, max_length=100)
 
@@ -1550,6 +1552,8 @@ class PurchaseRequestResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     request_number: str
     request_date: date
+    requested_delivery_date: date | None
+    delivery_plant_code: str | None
     department_code: str | None
     notes: str
     status: PurchaseRequestStatus

@@ -471,6 +471,10 @@ class PurchaseRequest(Base):
 
     request_number: Mapped[str] = mapped_column(String(20), primary_key=True)
     request_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    requested_delivery_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    delivery_plant_code: Mapped[str | None] = mapped_column(
+        ForeignKey("plants.code", ondelete="RESTRICT"), nullable=True, index=True
+    )
     department_code: Mapped[str | None] = mapped_column(ForeignKey("departments.code", ondelete="SET NULL"), nullable=True)
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
     status: Mapped[PurchaseRequestStatus] = mapped_column(
@@ -499,6 +503,9 @@ class PurchaseRequestItem(Base):
     quantity: Mapped[Decimal] = mapped_column(Numeric(14, 3), nullable=False)
     unit: Mapped[str] = mapped_column(String(10), nullable=False)
     remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    purchase_order_number: Mapped[str | None] = mapped_column(
+        ForeignKey("purchase_orders.po_number", ondelete="SET NULL"), nullable=True, index=True
+    )
     purchase_request: Mapped[PurchaseRequest] = relationship(back_populates="items")
 
 
