@@ -89,6 +89,29 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
     return code;
   }
 
+  Future<void> _refreshPlants() async {
+    try {
+      final response = await widget.auth.api.getJson(
+        '/master-data/plants?page=1&size=100',
+      );
+      if (mounted) {
+        setState(() {
+          _plants = (response['items'] as List).cast<Map<String, dynamic>>();
+        });
+      }
+    } on ApiException catch (exception) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Unable to load Receiving Plants: ${exception.message}',
+            ),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _review(Map<String, dynamic> pr, bool approve) async {
     String reason = '';
     if (!approve) {
@@ -238,46 +261,52 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                 children: [
                   InkWell(
                     borderRadius: BorderRadius.circular(8),
-                    onTap: _plants.isEmpty
-                        ? () => ScaffoldMessenger.of(x).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'No Receiving Plant is available. Create a Plant in Master Data first.',
-                              ),
+                    onTap: () async {
+                      if (_plants.isEmpty) {
+                        await _refreshPlants();
+                      }
+                      if (!x.mounted) return;
+                      if (_plants.isEmpty) {
+                        ScaffoldMessenger.of(x).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'No Receiving Plant is available. Create a Plant in Master Data first.',
                             ),
-                          )
-                        : () async {
-                            final selected = await showDialog<String>(
-                              context: x,
-                              builder: (pickerContext) => AlertDialog(
-                                title: const Text('Select Receiving Plant'),
-                                content: SizedBox(
-                                  width: 420,
-                                  child: ListView.builder(
-                                    shrinkWrap: true,
-                                    itemCount: _plants.length,
-                                    itemBuilder: (_, index) {
-                                      final plant = _plants[index];
-                                      final code = plant['code'].toString();
-                                      return ListTile(
-                                        title: Text(
-                                          '${plant['code']} — ${plant['name']}',
-                                        ),
-                                        trailing: code == plantCode
-                                            ? const Icon(Icons.check)
-                                            : null,
-                                        onTap: () =>
-                                            Navigator.pop(pickerContext, code),
-                                      );
-                                    },
+                          ),
+                        );
+                        return;
+                      }
+                      final selected = await showDialog<String>(
+                        context: x,
+                        builder: (pickerContext) => AlertDialog(
+                          title: const Text('Select Receiving Plant'),
+                          content: SizedBox(
+                            width: 420,
+                            child: ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: _plants.length,
+                              itemBuilder: (_, index) {
+                                final plant = _plants[index];
+                                final code = plant['code'].toString();
+                                return ListTile(
+                                  title: Text(
+                                    '${plant['code']} — ${plant['name']}',
                                   ),
-                                ),
-                              ),
-                            );
-                            if (selected != null) {
-                              setDialogState(() => plantCode = selected);
-                            }
-                          },
+                                  trailing: code == plantCode
+                                      ? const Icon(Icons.check)
+                                      : null,
+                                  onTap: () =>
+                                      Navigator.pop(pickerContext, code),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      );
+                      if (selected != null) {
+                        setDialogState(() => plantCode = selected);
+                      }
+                    },
                     child: InputDecorator(
                       decoration: const InputDecoration(
                         labelText: 'Receiving Plant *',
