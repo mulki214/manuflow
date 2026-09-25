@@ -239,6 +239,15 @@ async def post_finish_good(
         raise HTTPException(
             status_code=422, detail="Storage Location must be a Finished Goods location in the same Plant"
         )
+    prior_receipt = (
+        await db.execute(
+            select(FinishGoodReceipt)
+            .where(FinishGoodReceipt.source_wip_job_id == job.id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if prior_receipt and prior_receipt.status == FinishGoodStatus.posted:
+        raise HTTPException(status_code=409, detail="WIP Job has already been posted to Finished Goods")
     product = await db.get(Product, job.product_code)
     lot = (
         await db.execute(
@@ -252,6 +261,14 @@ async def post_finish_good(
             .with_for_update()
         )
     ).scalar_one_or_none()
+    if prior_receipt and prior_receipt.lot_id and (not lot or prior_receipt.lot_id != lot.id):
+        previous_lot = (
+            await db.execute(select(ProductLot).where(ProductLot.id == prior_receipt.lot_id).with_for_update())
+        ).scalar_one_or_none()
+        if previous_lot:
+            previous_lot.initial_quantity_grams = max(
+                Decimal("0"), previous_lot.initial_quantity_grams - prior_receipt.quantity
+            )
     lot_current = lot.current_quantity_grams if lot else Decimal("0")
     product_after, lot_after = apply_stock_delta(product.current_stock_grams, lot_current, job.current_quantity)
     if not lot:
@@ -267,24 +284,43 @@ async def post_finish_good(
         db.add(lot)
         await db.flush()
     else:
-        lot.initial_quantity_grams += job.current_quantity
+        if not prior_receipt or prior_receipt.lot_id != lot.id:
+            lot.initial_quantity_grams += job.current_quantity
         lot.current_quantity_grams = lot_after
-    record = FinishGoodReceipt(
-        receipt_number=await finish_good_number(db, data.receipt_date),
-        receipt_date=data.receipt_date,
-        source_wip_job_id=job.id,
-        product_code=job.product_code,
-        lot_number=job.lot_number,
-        lot_segment_code=job.lot_segment_code,
-        quantity=job.current_quantity,
-        unit=job.unit,
-        plant_code=job.plant_code,
-        storage_location_code=location.code,
-        lot_id=lot.id,
-        status=FinishGoodStatus.posted,
-        notes=data.notes,
-        performed_by=current_user.id,
-    )
+    if prior_receipt:
+        record = prior_receipt
+        record.receipt_date = data.receipt_date
+        record.product_code = job.product_code
+        record.lot_number = job.lot_number
+        record.lot_segment_code = job.lot_segment_code
+        record.quantity = job.current_quantity
+        record.unit = job.unit
+        record.plant_code = job.plant_code
+        record.storage_location_code = location.code
+        record.lot_id = lot.id
+        record.status = FinishGoodStatus.posted
+        record.notes = data.notes
+        record.performed_by = current_user.id
+        record.reversed_by = None
+        record.reversal_reason = None
+        record.reversed_at = None
+    else:
+        record = FinishGoodReceipt(
+            receipt_number=await finish_good_number(db, data.receipt_date),
+            receipt_date=data.receipt_date,
+            source_wip_job_id=job.id,
+            product_code=job.product_code,
+            lot_number=job.lot_number,
+            lot_segment_code=job.lot_segment_code,
+            quantity=job.current_quantity,
+            unit=job.unit,
+            plant_code=job.plant_code,
+            storage_location_code=location.code,
+            lot_id=lot.id,
+            status=FinishGoodStatus.posted,
+            notes=data.notes,
+            performed_by=current_user.id,
+        )
     product.current_stock_grams = product_after
     job.status = WipLotStatus.completed
     job.current_quantity = Decimal("0")
