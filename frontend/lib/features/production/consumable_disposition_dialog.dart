@@ -139,7 +139,7 @@ class _ConsumableDispositionDialogState
                           (lot) => DropdownMenuItem<int>(
                             value: lot['lot_id'] as int,
                             child: Text(
-                              '${lot['product_code']} — Lot ${lot['lot_number']} — ${lot['quantity']} ${unitLabel(lot['unit'].toString())}',
+                              '${lot['product_code']} — Lot ${lot['lot_number']} — ${formatQuantity(lot['quantity'], lot['unit'].toString())} ${unitLabel(lot['unit'].toString())}',
                             ),
                           ),
                         )

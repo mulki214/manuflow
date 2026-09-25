@@ -409,7 +409,9 @@ class _DeliveryFormDialogState extends State<DeliveryFormDialog> {
         return;
       }
       line.lot = lot;
-      line.quantityController.text = scan.availableQuantity?.toString() ?? '';
+      line.quantityController.text = scan.availableQuantity == null
+          ? ''
+          : formatQuantity(scan.availableQuantity, lot['unit'].toString());
       if (mounted) setState(() => _lines.add(line));
     }
   }

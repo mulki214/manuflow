@@ -334,7 +334,14 @@ class _WipProductionPageState extends State<WipProductionPage> {
                               cells: [
                                 DataCell(Text(row['product_code'].toString())),
                                 DataCell(Text(row['lot_number'].toString())),
-                                DataCell(Text(row['quantity'].toString())),
+                                DataCell(
+                                  Text(
+                                    formatQuantity(
+                                      row['quantity'],
+                                      row['unit'].toString(),
+                                    ),
+                                  ),
+                                ),
                                 DataCell(
                                   Text(
                                     row['unit'].toString() == 'gram'
@@ -827,7 +834,7 @@ class _WipProductionPageState extends State<WipProductionPage> {
                         DataCell(Text(item.machineName)),
                         DataCell(
                           Text(
-                            '${_number(item.goodQuantity)} / ${_number(item.repairQuantity)} / ${_number(item.ngQuantity)}',
+                            '${formatQuantity(item.goodQuantity, item.outputUnit)} / ${formatQuantity(item.repairQuantity, item.outputUnit)} / ${formatQuantity(item.ngQuantity, item.outputUnit)}',
                           ),
                         ),
                         DataCell(
@@ -871,7 +878,7 @@ class _WipProductionPageState extends State<WipProductionPage> {
           onTap: () => _executionDetail(item),
           title: Text(item.number),
           subtitle: Text(
-            '${item.description}\n${item.beforeProcess} → ${item.afterProcess}\nGood ${_number(item.goodQuantity)} • Repair ${_number(item.repairQuantity)} • NG ${_number(item.ngQuantity)}',
+            '${item.description}\n${item.beforeProcess} → ${item.afterProcess}\nGood ${formatQuantity(item.goodQuantity, item.outputUnit)} • Repair ${formatQuantity(item.repairQuantity, item.outputUnit)} • NG ${formatQuantity(item.ngQuantity, item.outputUnit)}',
           ),
           isThreeLine: true,
           trailing: item.canReverse
@@ -911,15 +918,15 @@ class _WipProductionPageState extends State<WipProductionPage> {
               ),
               _detail(
                 'Good',
-                '${_number(item.goodQuantity)} ${unitLabel(item.unit)}',
+                '${formatQuantity(item.goodQuantity, item.outputUnit)} ${unitLabel(item.outputUnit)}',
               ),
               _detail(
                 'Repair',
-                '${_number(item.repairQuantity)} ${unitLabel(item.unit)}',
+                '${formatQuantity(item.repairQuantity, item.outputUnit)} ${unitLabel(item.outputUnit)}',
               ),
               _detail(
                 'NG',
-                '${_number(item.ngQuantity)} ${unitLabel(item.unit)}',
+                '${formatQuantity(item.ngQuantity, item.outputUnit)} ${unitLabel(item.outputUnit)}',
               ),
               _detail(
                 'Time Range',

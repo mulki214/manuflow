@@ -118,6 +118,7 @@ class ProductionExecutionModel {
     required this.segmentCode,
     required this.plantName,
     required this.unit,
+    required this.outputUnit,
     required this.beforeProcess,
     required this.afterProcess,
     required this.machineName,
@@ -149,6 +150,7 @@ class ProductionExecutionModel {
         segmentCode: json['lot_segment_code'].toString(),
         plantName: json['plant_name'].toString(),
         unit: json['unit'].toString(),
+        outputUnit: json['output_unit']?.toString() ?? json['unit'].toString(),
         beforeProcess:
             '${json['before_process_code']} — ${json['before_process_name']}',
         afterProcess: json['after_process_name']?.toString() ?? 'Quality Queue',
@@ -187,6 +189,7 @@ class ProductionExecutionModel {
   final String segmentCode;
   final String plantName;
   final String unit;
+  final String outputUnit;
   final String beforeProcess;
   final String afterProcess;
   final String machineName;

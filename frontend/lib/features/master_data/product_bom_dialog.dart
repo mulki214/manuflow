@@ -55,9 +55,11 @@ class _ProductBomDialogState extends State<ProductBomDialog> {
             .cast<Map<String, dynamic>>()
             .where((product) => product['category'] != 'finished_good')
             .toList();
-        _outputQuantity.text =
-            bomResponse['output_quantity']?.toString() ?? '1';
         _outputUnit = bomResponse['output_unit']?.toString() ?? 'pcs';
+        _outputQuantity.text = formatQuantity(
+          bomResponse['output_quantity'] ?? 1,
+          _outputUnit,
+        );
         for (final item
             in (bomResponse['items'] as List).cast<Map<String, dynamic>>()) {
           _lines.add(
@@ -65,7 +67,7 @@ class _ProductBomDialogState extends State<ProductBomDialog> {
               productCode: item['material_product_code'].toString(),
               unit: item['unit'].toString(),
               quantity: TextEditingController(
-                text: item['quantity'].toString(),
+                text: formatQuantity(item['quantity'], item['unit'].toString()),
               ),
             ),
           );

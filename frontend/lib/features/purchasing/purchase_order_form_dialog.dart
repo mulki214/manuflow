@@ -633,7 +633,7 @@ class _OrderItemDraft {
     return _OrderItemDraft(
       id: item.id,
       productCode: item.productCode,
-      quantity: item.quantityGrams.toString(),
+      quantity: formatQuantity(item.quantityGrams, item.unit),
       price: item.unitPrice.toString(),
       remark: item.remark,
       unit: item.unit,

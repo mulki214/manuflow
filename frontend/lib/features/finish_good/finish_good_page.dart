@@ -94,7 +94,7 @@ class _FinishGoodPageState extends State<FinishGoodPage> {
               children: [
                 Text(
                   '${job['product_code']} • Lot ${job['lot_number']} • '
-                  '${job['quantity']} ${unitLabel(job['unit'].toString())}',
+                  '${formatQuantity(job['quantity'], job['unit'].toString())} ${unitLabel(job['unit'].toString())}',
                 ),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
@@ -291,7 +291,7 @@ class _FinishGoodPageState extends State<FinishGoodPage> {
                             child: ListTile(
                               title: Text(title),
                               subtitle: Text(
-                                'Qty ${item['quantity']} ${unitLabel(item['unit'].toString())} • '
+                                'Qty ${formatQuantity(item['quantity'], item['unit'].toString())} ${unitLabel(item['unit'].toString())} • '
                                 'Plant ${item['plant_code']}'
                                 '${_tab == 'stock' ? ' • ${item['storage_name']} — ${item['storage_location_name']}' : ''}',
                               ),

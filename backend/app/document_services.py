@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from io import BytesIO
 from typing import Any
 
@@ -6,6 +7,17 @@ import jwt
 from openpyxl import Workbook
 
 from app.config import settings
+
+
+_DISCRETE_UNITS = {"pcs", "bar", "pail"}
+
+
+def format_document_quantity(value: Any, unit: str | None) -> str:
+    """Format quantities consistently with the application UI."""
+    numeric = Decimal(str(value))
+    if unit in _DISCRETE_UNITS:
+        return f"{numeric:,.0f}"
+    return f"{numeric:,.3f}".rstrip("0").rstrip(".")
 
 
 def signed_document_payload(
@@ -101,7 +113,7 @@ def purchase_order_pdf_bytes(order: Any) -> bytes:
                 item.line_number,
                 item.product_code,
                 Paragraph(item.description, styles["BodyText"]),
-                f"{item.quantity_grams:,.3f}",
+                format_document_quantity(item.quantity_grams, item.unit),
                 "grams" if item.unit == "gram" else item.unit,
                 f"{item.unit_price:,.2f}",
                 f"{item.amount:,.2f}",
@@ -186,7 +198,7 @@ def purchase_request_pdf_bytes(request: Any) -> bytes:
     story.append(Table([["Date", request.request_date.strftime("%d/%m/%Y"), "Status", request.status], ["Requested By", request.created_by_name, "Department", request.department_code or "-"], ["Notes", request.notes or "-", "Reviewed By", request.reviewed_by_name or "Pending review"]], colWidths=[28 * mm, 55 * mm, 35 * mm, 60 * mm], style=[("GRID", (0, 0), (-1, -1), .3, colors.grey), ("VALIGN", (0, 0), (-1, -1), "TOP")]))
     rows = [["No", "Product", "Description", "Qty", "Unit", "Remark"]]
     for item in request.items:
-        rows.append([item.line_number, item.product_code, Paragraph(item.description, styles["BodyText"]), f"{item.quantity:,.3f}", item.unit, item.remark])
+        rows.append([item.line_number, item.product_code, Paragraph(item.description, styles["BodyText"]), format_document_quantity(item.quantity, item.unit), item.unit, item.remark])
     story.extend([Spacer(1, 5 * mm), Table(rows, repeatRows=1, colWidths=[10 * mm, 27 * mm, 62 * mm, 22 * mm, 18 * mm, 39 * mm], style=[("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4F659F")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("GRID", (0, 0), (-1, -1), .3, colors.grey), ("VALIGN", (0, 0), (-1, -1), "TOP")])])
     def qr(payload: str | None):
         if not payload: return Paragraph("Pending review", center)
@@ -242,7 +254,7 @@ def sales_order_pdf_bytes(order: Any) -> bytes:
                 item.line_number,
                 item.product_code,
                 Paragraph(item.description, styles["BodyText"]),
-                f"{item.quantity_grams:,.3f}",
+                format_document_quantity(item.quantity_grams, item.unit),
                 "grams" if item.unit == "gram" else item.unit,
                 f"{item.unit_price:,.2f}",
                 f"{item.amount:,.2f}",
@@ -360,7 +372,7 @@ def delivery_note_pdf_bytes(delivery: Any) -> bytes:
                 line.product_code,
                 Paragraph(line.description or "-", styles["BodyText"]),
                 line.lot_number,
-                f"{line.quantity:,.3f}",
+                format_document_quantity(line.quantity, line.unit),
                 "grams" if line.unit == "gram" else line.unit,
             ]
         )

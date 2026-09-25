@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
 import '../../shared/app_module_scaffold.dart';
 import '../../shared/app_sidebar.dart';
+import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
 
 class PurchaseRequestPage extends StatefulWidget {
@@ -571,7 +572,7 @@ class _PurchaseRequestLine {
   _PurchaseRequestLine.fromJson(Map<String, dynamic> json)
     : productCode = json['product_code']?.toString(),
       unit = json['unit']?.toString() ?? 'pcs' {
-    quantity.text = json['quantity']?.toString() ?? '';
+    quantity.text = formatQuantity(json['quantity'], unit ?? 'pcs');
     remark.text = json['remark']?.toString() ?? '';
   }
 

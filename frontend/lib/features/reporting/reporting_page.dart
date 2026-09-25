@@ -5,6 +5,7 @@ import '../../core/api_client.dart';
 import '../../shared/app_module_scaffold.dart';
 import '../../shared/app_sidebar.dart' show AppModule;
 import '../../shared/crud_widgets.dart';
+import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
 
 class ReportingPage extends StatefulWidget {
@@ -16,6 +17,20 @@ class ReportingPage extends StatefulWidget {
 }
 
 class _ReportingPageState extends State<ReportingPage> {
+  static const _quantityColumns = {
+    'quantity',
+    'stock_on_hand',
+    'processed',
+    'good',
+    'repair',
+    'ng',
+    'inspected',
+    'passed',
+    'ordered',
+    'delivered',
+    'outstanding',
+    'received',
+  };
   static const _reports = {
     'stock': 'Stock by Lot',
     'product-stock': 'Product Stock Summary',
@@ -121,6 +136,15 @@ class _ReportingPageState extends State<ReportingPage> {
     _ => key.replaceAll('_', ' '),
   };
 
+  String _displayValue(Map<String, dynamic> row, String key) {
+    final value = row[key];
+    final unit = row['unit']?.toString();
+    if (unit != null && _quantityColumns.contains(key)) {
+      return formatQuantity(value, unit);
+    }
+    return value?.toString() ?? '-';
+  }
+
   Future<void> _openDetail(Map<String, dynamic> row) => showDialog<void>(
     context: context,
     builder: (context) => AlertDialog(
@@ -146,7 +170,7 @@ class _ReportingPageState extends State<ReportingPage> {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        Text(entry.value?.toString() ?? '-'),
+                        Text(_displayValue(row, entry.key)),
                       ],
                     ),
                   ),
@@ -265,9 +289,7 @@ class _ReportingPageState extends State<ReportingPage> {
                 (row) => DataRow(
                   onSelectChanged: (_) => _openDetail(row),
                   cells: columns
-                      .map(
-                        (name) => DataCell(Text(row[name]?.toString() ?? '-')),
-                      )
+                      .map((name) => DataCell(Text(_displayValue(row, name))))
                       .toList(),
                 ),
               )
