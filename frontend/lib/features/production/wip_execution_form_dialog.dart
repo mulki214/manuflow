@@ -162,10 +162,11 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
     final outputPerBatch =
         double.tryParse(_outputBom!['output_quantity'].toString()) ?? 0;
     if (inputPerBatch <= 0) return 0;
-    final usableInput = (_value(_processing) - _value(_repair) - _value(_ng))
+    final convertedQuantity =
+        (_value(_processing) / inputPerBatch) * outputPerBatch;
+    return (convertedQuantity - _value(_repair) - _value(_ng))
         .clamp(0, double.infinity)
         .toDouble();
-    return (usableInput / inputPerBatch) * outputPerBatch;
   }
 
   String get _effectiveOutputUnit => _isBomConversion
