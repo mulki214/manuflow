@@ -56,6 +56,11 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
         fileExtension: 'pdf',
         mimeType: MimeType.pdf,
       );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Purchase Request $n PDF downloaded')),
+        );
+      }
     } on ApiException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -145,27 +150,32 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                         subtitle: Text(
                           '${p['status']} • ${(p['items'] as List).length} product(s)',
                         ),
-                        trailing: PopupMenuButton<String>(
-                          onSelected: (a) {
-                            if (a == 'pdf') _pdf(p);
-                            if (a == 'approve') _review(p, true);
-                            if (a == 'reject') _review(p, false);
-                          },
-                          itemBuilder: (_) => [
-                            const PopupMenuItem(
-                              value: 'pdf',
-                              child: Text('Download PDF'),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: 'Download PDF',
+                              onPressed: () => _pdf(p),
+                              icon: const Icon(Icons.picture_as_pdf_outlined),
                             ),
-                            if (p['can_review'] == true) ...[
-                              const PopupMenuItem(
-                                value: 'approve',
-                                child: Text('Approve'),
-                              ),
-                              const PopupMenuItem(
-                                value: 'reject',
-                                child: Text('Reject'),
-                              ),
-                            ],
+                            PopupMenuButton<String>(
+                              onSelected: (a) {
+                                if (a == 'approve') _review(p, true);
+                                if (a == 'reject') _review(p, false);
+                              },
+                              itemBuilder: (_) => [
+                                if (p['can_review'] == true) ...[
+                                  const PopupMenuItem(
+                                    value: 'approve',
+                                    child: Text('Approve'),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: 'reject',
+                                    child: Text('Reject'),
+                                  ),
+                                ],
+                              ],
+                            ),
                           ],
                         ),
                       );
@@ -177,75 +187,190 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
     ),
   );
   Future<void> _form(BuildContext context) async {
-    final product = TextEditingController(),
-        qty = TextEditingController(),
-        unit = TextEditingController(text: 'pcs'),
-        notes = TextEditingController();
+    final lines = [_PurchaseRequestLine()];
+    final notes = TextEditingController();
     final ok = await showDialog<bool>(
       context: context,
-      builder: (x) => AlertDialog(
-        title: const Text('Create Purchase Request'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+      builder: (x) => StatefulBuilder(
+        builder: (x, setDialogState) => AlertDialog(
+          title: const Text('Create Purchase Request'),
+          content: SizedBox(
+            width: 560,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Requested Products'),
+                  const SizedBox(height: 8),
+                  for (var index = 0; index < lines.length; index++) ...[
+                    _PurchaseRequestLineFields(
+                      index: index,
+                      line: lines[index],
+                      canRemove: lines.length > 1,
+                      onRemove: () => setDialogState(() {
+                        lines.removeAt(index).dispose();
+                      }),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      onPressed: () => setDialogState(
+                        () => lines.add(_PurchaseRequestLine()),
+                      ),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Add Product'),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: notes,
+                    maxLines: 2,
+                    decoration: const InputDecoration(labelText: 'Notes'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(x),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                if (lines.any(
+                  (line) =>
+                      line.product.text.trim().isEmpty ||
+                      line.quantity.text.trim().isEmpty ||
+                      line.unit.text.trim().isEmpty,
+                )) {
+                  ScaffoldMessenger.of(x).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Complete product code, quantity, and unit for every line',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                try {
+                  await widget.auth.api.postJson('/purchase-requests', {
+                    'request_date': DateTime.now().toIso8601String().substring(
+                      0,
+                      10,
+                    ),
+                    'notes': notes.text,
+                    'items': [
+                      for (final line in lines)
+                        {
+                          'product_code': line.product.text.trim(),
+                          'quantity': line.quantity.text.trim(),
+                          'unit': line.unit.text.trim(),
+                          'remark': line.remark.text.trim(),
+                        },
+                    ],
+                  });
+                  if (x.mounted) Navigator.pop(x, true);
+                } on ApiException catch (e) {
+                  if (x.mounted) {
+                    ScaffoldMessenger.of(
+                      x,
+                    ).showSnackBar(SnackBar(content: Text(e.message)));
+                  }
+                }
+              },
+              child: const Text('Submit'),
+            ),
+          ],
+        ),
+      ),
+    );
+    for (final line in lines) {
+      line.dispose();
+    }
+    notes.dispose();
+    if (ok == true) _load();
+  }
+}
+
+class _PurchaseRequestLine {
+  final product = TextEditingController();
+  final quantity = TextEditingController();
+  final unit = TextEditingController(text: 'pcs');
+  final remark = TextEditingController();
+
+  void dispose() {
+    product.dispose();
+    quantity.dispose();
+    unit.dispose();
+    remark.dispose();
+  }
+}
+
+class _PurchaseRequestLineFields extends StatelessWidget {
+  const _PurchaseRequestLineFields({
+    required this.index,
+    required this.line,
+    required this.canRemove,
+    required this.onRemove,
+  });
+
+  final int index;
+  final _PurchaseRequestLine line;
+  final bool canRemove;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    margin: EdgeInsets.zero,
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        children: [
+          Row(
             children: [
-              TextField(
-                controller: product,
-                decoration: const InputDecoration(labelText: 'Product Code *'),
+              Expanded(child: Text('Product ${index + 1}')),
+              if (canRemove)
+                IconButton(
+                  tooltip: 'Remove product',
+                  onPressed: onRemove,
+                  icon: const Icon(Icons.delete_outline),
+                ),
+            ],
+          ),
+          TextField(
+            controller: line.product,
+            decoration: const InputDecoration(labelText: 'Product Code *'),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: line.quantity,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(labelText: 'Quantity *'),
+                ),
               ),
-              TextField(
-                controller: qty,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Quantity *'),
-              ),
-              TextField(
-                controller: unit,
-                decoration: const InputDecoration(labelText: 'Unit *'),
-              ),
-              TextField(
-                controller: notes,
-                decoration: const InputDecoration(labelText: 'Notes'),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextField(
+                  controller: line.unit,
+                  decoration: const InputDecoration(labelText: 'Unit *'),
+                ),
               ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(x),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              try {
-                await widget.auth.api.postJson('/purchase-requests', {
-                  'request_date': DateTime.now().toIso8601String().substring(
-                    0,
-                    10,
-                  ),
-                  'notes': notes.text,
-                  'items': [
-                    {
-                      'product_code': product.text.trim(),
-                      'quantity': qty.text,
-                      'unit': unit.text.trim(),
-                      'remark': '',
-                    },
-                  ],
-                });
-                if (x.mounted) Navigator.pop(x, true);
-              } on ApiException catch (e) {
-                if (x.mounted) {
-                  ScaffoldMessenger.of(
-                    x,
-                  ).showSnackBar(SnackBar(content: Text(e.message)));
-                }
-              }
-            },
-            child: const Text('Submit'),
+          TextField(
+            controller: line.remark,
+            decoration: const InputDecoration(labelText: 'Remark'),
           ),
         ],
       ),
-    );
-    if (ok == true) _load();
-  }
+    ),
+  );
 }
