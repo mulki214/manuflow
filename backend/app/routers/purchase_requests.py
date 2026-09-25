@@ -121,6 +121,9 @@ async def update_request(request_number: str, data: PurchaseRequestUpdate, db: A
     record.requested_delivery_date = data.requested_delivery_date
     record.delivery_plant_code = plant.code
     record.notes = data.notes.strip()
+    for existing_item in record.items:
+        await db.delete(existing_item)
+    await db.flush()
     record.items = new_items
     await db.commit()
     return await response(db, await get_request(db, request_number), current_user)
