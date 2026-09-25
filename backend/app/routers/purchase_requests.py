@@ -19,7 +19,7 @@ from app.models import (
 )
 from app.purchasing_services import generate_purchase_order_number, payment_due_date
 from app.schemas import (
-    PaginatedPurchaseRequests, PurchaseRequestCreate, PurchaseRequestRejection,
+    PaginatedPurchaseRequests, PurchaseRequestCreate, PurchaseRequestRejection, PurchaseRequestUpdate,
     PurchaseRequestResponse,
 )
 
@@ -58,6 +58,7 @@ async def response(db: AsyncSession, record: PurchaseRequest, user: User) -> Pur
         reviewed_by=record.reviewed_by, reviewed_by_name=reviewer_name,
         reviewed_at=record.reviewed_at, rejection_reason=record.rejection_reason,
         can_review=record.status == PurchaseRequestStatus.waiting_review and can_review(user),
+        can_edit=record.status == PurchaseRequestStatus.waiting_review and record.created_by == user.id,
         creator_qr_payload=signed_document_payload("purchase_request", record.request_number, "submitted", record.created_by, creator_name, record.created_at),
         review_qr_payload=(signed_document_payload("purchase_request", record.request_number, record.status.value, record.reviewed_by, reviewer_name or record.reviewed_by, record.reviewed_at) if record.status != PurchaseRequestStatus.waiting_review and record.reviewed_by and record.reviewed_at else None),
         items=record.items, created_at=record.created_at, updated_at=record.updated_at,
@@ -98,6 +99,31 @@ async def create_request(data: PurchaseRequestCreate, db: AsyncSession = Depends
         if not product: raise HTTPException(status_code=422, detail=f"Product {item.product_code} was not found")
         record.items.append(PurchaseRequestItem(line_number=index, product_code=product.code, part_name=product.part_name, part_no=product.part_no, description=product.description, quantity=item.quantity, unit=item.unit.value, remark=item.remark.strip()))
     db.add(record); await db.commit(); return await response(db, await get_request(db, record.request_number), current_user)
+
+
+@router.patch("/{request_number}", response_model=PurchaseRequestResponse)
+async def update_request(request_number: str, data: PurchaseRequestUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> PurchaseRequestResponse:
+    record = await get_request(db, request_number)
+    if record.created_by != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the requester can edit this Purchase Request")
+    if record.status != PurchaseRequestStatus.waiting_review:
+        raise HTTPException(status_code=409, detail="Approved or rejected Purchase Requests cannot be edited")
+    plant = await db.get(Plant, data.delivery_plant_code)
+    if not plant:
+        raise HTTPException(status_code=422, detail="Selected receiving plant was not found")
+    new_items: list[PurchaseRequestItem] = []
+    for index, item in enumerate(data.items, 1):
+        product = await db.get(Product, item.product_code)
+        if not product:
+            raise HTTPException(status_code=422, detail=f"Product {item.product_code} was not found")
+        new_items.append(PurchaseRequestItem(line_number=index, product_code=product.code, part_name=product.part_name, part_no=product.part_no, description=product.description, quantity=item.quantity, unit=item.unit.value, remark=item.remark.strip()))
+    record.request_date = data.request_date
+    record.requested_delivery_date = data.requested_delivery_date
+    record.delivery_plant_code = plant.code
+    record.notes = data.notes.strip()
+    record.items = new_items
+    await db.commit()
+    return await response(db, await get_request(db, request_number), current_user)
 
 
 @router.get("/{request_number}", response_model=PurchaseRequestResponse)

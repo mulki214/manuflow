@@ -236,24 +236,38 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                                     Icons.picture_as_pdf_outlined,
                                   ),
                                 ),
-                                PopupMenuButton<String>(
-                                  onSelected: (a) {
-                                    if (a == 'approve') _review(p, true);
-                                    if (a == 'reject') _review(p, false);
-                                  },
-                                  itemBuilder: (_) => [
-                                    if (p['can_review'] == true) ...[
-                                      const PopupMenuItem(
-                                        value: 'approve',
-                                        child: Text('Approve'),
-                                      ),
-                                      const PopupMenuItem(
-                                        value: 'reject',
-                                        child: Text('Reject'),
-                                      ),
+                                if (p['can_edit'] == true ||
+                                    p['can_review'] == true)
+                                  PopupMenuButton<String>(
+                                    onSelected: (a) {
+                                      if (a == 'edit') {
+                                        _form(context, existing: p);
+                                      }
+                                      if (a == 'approve') {
+                                        _review(p, true);
+                                      }
+                                      if (a == 'reject') {
+                                        _review(p, false);
+                                      }
+                                    },
+                                    itemBuilder: (_) => [
+                                      if (p['can_edit'] == true)
+                                        const PopupMenuItem(
+                                          value: 'edit',
+                                          child: Text('Edit'),
+                                        ),
+                                      if (p['can_review'] == true) ...[
+                                        const PopupMenuItem(
+                                          value: 'approve',
+                                          child: Text('Approve'),
+                                        ),
+                                        const PopupMenuItem(
+                                          value: 'reject',
+                                          child: Text('Reject'),
+                                        ),
+                                      ],
                                     ],
-                                  ],
-                                ),
+                                  ),
                               ],
                             ),
                           ),
@@ -266,16 +280,37 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
       ),
     ),
   );
-  Future<void> _form(BuildContext context) async {
-    final lines = [_PurchaseRequestLine()];
-    final notes = TextEditingController();
-    String? plantCode;
-    var requestedDeliveryDate = DateTime.now();
+  Future<void> _form(
+    BuildContext context, {
+    Map<String, dynamic>? existing,
+  }) async {
+    final existingItems = (existing?['items'] as List? ?? const []);
+    final lines = existingItems.isEmpty
+        ? [_PurchaseRequestLine()]
+        : existingItems
+              .map(
+                (item) =>
+                    _PurchaseRequestLine.fromJson(item as Map<String, dynamic>),
+              )
+              .toList();
+    final notes = TextEditingController(
+      text: existing?['notes']?.toString() ?? '',
+    );
+    String? plantCode = existing?['delivery_plant_code']?.toString();
+    var requestedDeliveryDate =
+        DateTime.tryParse(
+          existing?['requested_delivery_date']?.toString() ?? '',
+        ) ??
+        DateTime.now();
     final ok = await showDialog<bool>(
       context: context,
       builder: (x) => StatefulBuilder(
         builder: (x, setDialogState) => AlertDialog(
-          title: const Text('Create Purchase Request'),
+          title: Text(
+            existing == null
+                ? 'Create Purchase Request'
+                : 'Edit Purchase Request',
+          ),
           content: SizedBox(
             width: 560,
             child: SingleChildScrollView(
@@ -474,7 +509,7 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                   return;
                 }
                 try {
-                  await widget.auth.api.postJson('/purchase-requests', {
+                  final body = {
                     'request_date': DateTime.now().toIso8601String().substring(
                       0,
                       10,
@@ -493,7 +528,15 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                           'remark': line.remark.text.trim(),
                         },
                     ],
-                  });
+                  };
+                  if (existing == null) {
+                    await widget.auth.api.postJson('/purchase-requests', body);
+                  } else {
+                    await widget.auth.api.patchJson(
+                      '/purchase-requests/${Uri.encodeComponent(existing['request_number'].toString())}',
+                      body,
+                    );
+                  }
                   if (x.mounted) Navigator.pop(x, true);
                 } on ApiException catch (e) {
                   if (x.mounted) {
@@ -522,6 +565,15 @@ class _PurchaseRequestLine {
   final quantity = TextEditingController();
   String? unit = 'pcs';
   final remark = TextEditingController();
+
+  _PurchaseRequestLine();
+
+  _PurchaseRequestLine.fromJson(Map<String, dynamic> json)
+    : productCode = json['product_code']?.toString(),
+      unit = json['unit']?.toString() ?? 'pcs' {
+    quantity.text = json['quantity']?.toString() ?? '';
+    remark.text = json['remark']?.toString() ?? '';
+  }
 
   void dispose() {
     quantity.dispose();

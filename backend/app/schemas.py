@@ -1531,6 +1531,10 @@ class PurchaseRequestCreate(BaseModel):
         return self
 
 
+class PurchaseRequestUpdate(PurchaseRequestCreate):
+    pass
+
+
 class PurchaseRequestRejection(BaseModel):
     reason: str = Field(min_length=3, max_length=2000)
 
@@ -1564,6 +1568,7 @@ class PurchaseRequestResponse(BaseModel):
     reviewed_at: datetime | None
     rejection_reason: str | None
     can_review: bool
+    can_edit: bool
     creator_qr_payload: str
     review_qr_payload: str | None
     items: list[PurchaseRequestItemResponse]
