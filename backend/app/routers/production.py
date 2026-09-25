@@ -547,19 +547,12 @@ async def complete_wip_job(
     if current_process.plant_code != job.plant_code:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="WIP Job Process belongs to another Plant")
     try:
-        for value, label in (
-            (data.processing_quantity, "Processing Quantity"),
-            (data.repair_quantity, "Repair Quantity"),
-            (data.ng_quantity, "NG Quantity"),
-        ):
-            require_whole_quantity(value, job.unit, label)
+        require_whole_quantity(data.processing_quantity, job.unit, "Processing Quantity")
         processing = quantity(data.processing_quantity)
         repair = quantity(data.repair_quantity)
         ng = quantity(data.ng_quantity)
         if processing > job.current_quantity:
             raise ValueError("Processing Quantity exceeds available WIP Quantity")
-        if repair + ng > processing:
-            raise ValueError("Repair and NG Quantity cannot exceed Processing Quantity")
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
@@ -638,7 +631,6 @@ async def complete_wip_job(
     if not output_product:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Output Product not found")
     is_bom_conversion = output_product.code != job.product_code
-    good_input_quantity = quantity(processing - repair - ng)
     if is_bom_conversion:
         bom = await db.get(BillOfMaterial, output_product.code)
         bom_items = list(
@@ -660,11 +652,18 @@ async def complete_wip_job(
         if matching_item.unit != job.unit or not bom.output_unit:
             raise HTTPException(status_code=422, detail="BOM input/output units do not match this WIP conversion")
         output_unit = bom.output_unit
-        good = quantity(good_input_quantity * bom.output_quantity / matching_item.quantity)
+        for value, label in ((repair, "Repair Quantity"), (ng, "NG Quantity")):
+            require_whole_quantity(value, output_unit, label)
+        converted_quantity = quantity(processing * bom.output_quantity / matching_item.quantity)
+        if repair + ng > converted_quantity:
+            raise HTTPException(422, detail="Repair and NG Quantity cannot exceed converted Output Quantity")
+        good = quantity(converted_quantity - repair - ng)
         require_whole_quantity(good, output_unit, "Good Output Quantity")
         if quantity(data.good_quantity) != good:
             raise HTTPException(status_code=422, detail="Good Output Quantity must match the BOM conversion result")
     else:
+        for value, label in ((repair, "Repair Quantity"), (ng, "NG Quantity")):
+            require_whole_quantity(value, job.unit, label)
         good = quantity(data.good_quantity)
         require_whole_quantity(good, job.unit, "Good Quantity")
         if good + repair + ng != processing:
@@ -686,7 +685,7 @@ async def complete_wip_job(
         ).scalar_one_or_none()
         if (
             not repair_route.is_active
-            or repair_route.product_code != job.product_code
+            or repair_route.product_code != output_product.code
             or repair_route.source_process_code != job.process_code
             or not repair_step
         ):
@@ -695,7 +694,7 @@ async def complete_wip_job(
         await db.execute(
             select(ProductProcessStandard)
             .where(
-                ProductProcessStandard.product_code == job.product_code,
+                ProductProcessStandard.product_code == output_product.code,
                 ProductProcessStandard.process_code == job.process_code,
                 ProductProcessStandard.is_active.is_(True),
                 or_(
@@ -708,7 +707,7 @@ async def complete_wip_job(
         )
     ).scalar_one_or_none()
     exceeded = ng_limit_exceeded(
-        processing,
+        converted_quantity if is_bom_conversion else processing,
         ng,
         standard.maximum_ng_quantity if standard else None,
         standard.maximum_ng_percent if standard else None,
@@ -809,11 +808,11 @@ async def complete_wip_job(
                 repair_step_order=repair_step.step_order if repair_step else None,
                 repair_return_process_code=repair_route.return_process_code if repair_route else None,
                 process_code=repair_step.process_code if repair_step else repair_process.code,
-                product_code=job.product_code,
+                product_code=output_product.code,
                 lot_number=job.lot_number,
                 lot_segment_code=child_segment_code(job.lot_segment_code, record.id, "R"),
                 plant_code=job.plant_code,
-                unit=job.unit,
+                unit=output_unit,
                 input_quantity=repair,
                 current_quantity=repair,
                 status=WipLotStatus.queued,
@@ -827,11 +826,11 @@ async def complete_wip_job(
                 parent_job_id=job.id,
                 production_execution_id=record.id,
                 process_code=current_process.code,
-                product_code=job.product_code,
+                product_code=output_product.code,
                 lot_number=job.lot_number,
                 lot_segment_code=child_segment_code(job.lot_segment_code, record.id, "N"),
                 plant_code=job.plant_code,
-                unit=job.unit,
+                unit=output_unit,
                 input_quantity=ng,
                 current_quantity=ng,
                 status=WipLotStatus.ng,

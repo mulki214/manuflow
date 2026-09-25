@@ -195,16 +195,28 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
     setState(() {
       _outputProduct = value;
       _outputBom = null;
+      _outputUnit = value == widget.job.productCode ? widget.job.unit : null;
+      _repairRoute = null;
     });
-    if (value == null || value == widget.job.productCode) return;
     try {
-      final bom = await widget.api.getJson(
-        '/master-data/products/${Uri.encodeComponent(value)}/bom',
-      );
+      final selectedProduct = value ?? widget.job.productCode;
+      final responses = await Future.wait([
+        if (value != null && value != widget.job.productCode)
+          widget.api.getJson(
+            '/master-data/products/${Uri.encodeComponent(value)}/bom',
+          ),
+        widget.api.getJson(
+          '/production/repair-routes?product_code=${Uri.encodeComponent(selectedProduct)}',
+        ),
+      ]);
       if (mounted) {
         setState(() {
-          _outputBom = bom;
-          _outputUnit = bom['output_unit']?.toString();
+          if (value != null && value != widget.job.productCode) {
+            final bom = responses.first as Map<String, dynamic>;
+            _outputBom = bom;
+            _outputUnit = bom['output_unit']?.toString();
+          }
+          _repairRoutes = (responses.last as List).cast<Map<String, dynamic>>();
         });
       }
     } on ApiException catch (exception) {
@@ -480,7 +492,7 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Good output: ${unitLabel(_effectiveOutputUnit)} • Repair / NG: ${unitLabel(widget.job.unit)}',
+                      'Good, Repair, and NG: ${unitLabel(_effectiveOutputUnit)}',
                       style: const TextStyle(color: Color(0xFF667085)),
                     ),
                     const SizedBox(height: 8),
@@ -501,12 +513,12 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
                         _quantityField(
                           _repair,
                           'Repair Quantity',
-                          widget.job.unit,
+                          _effectiveOutputUnit,
                         ),
                         _quantityField(
                           _ng,
                           'NG Quantity',
-                          widget.job.unit,
+                          _effectiveOutputUnit,
                           danger: true,
                         ),
                       ],
