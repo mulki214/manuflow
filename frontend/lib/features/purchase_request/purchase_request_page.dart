@@ -112,6 +112,30 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
     }
   }
 
+  Future<void> _refreshProducts() async {
+    try {
+      final response = await widget.auth.api.getJson(
+        '/master-data/products?page=1&size=100',
+      );
+      if (mounted) {
+        setState(() {
+          _products = (response['items'] as List)
+              .cast<Map<String, dynamic>>()
+              .where((product) => product['is_active'] != false)
+              .toList();
+        });
+      }
+    } on ApiException catch (exception) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Unable to load Products: ${exception.message}'),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _review(Map<String, dynamic> pr, bool approve) async {
     String reason = '';
     if (!approve) {
@@ -353,9 +377,52 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                       index: index,
                       line: lines[index],
                       products: _products,
-                      onProductChanged: (value) => setDialogState(() {
-                        lines[index].productCode = value;
-                      }),
+                      onSelectProduct: () async {
+                        if (_products.isEmpty) await _refreshProducts();
+                        if (!x.mounted) return;
+                        if (_products.isEmpty) {
+                          ScaffoldMessenger.of(x).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'No Product is available in Master Data.',
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+                        final selected = await showDialog<String>(
+                          context: x,
+                          builder: (pickerContext) => AlertDialog(
+                            title: const Text('Select Product'),
+                            content: SizedBox(
+                              width: 520,
+                              child: ListView.builder(
+                                shrinkWrap: true,
+                                itemCount: _products.length,
+                                itemBuilder: (_, productIndex) {
+                                  final product = _products[productIndex];
+                                  final code = product['code'].toString();
+                                  return ListTile(
+                                    title: Text(
+                                      '${product['code']} — ${product['description']}',
+                                    ),
+                                    trailing: code == lines[index].productCode
+                                        ? const Icon(Icons.check)
+                                        : null,
+                                    onTap: () =>
+                                        Navigator.pop(pickerContext, code),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                        );
+                        if (selected != null) {
+                          setDialogState(
+                            () => lines[index].productCode = selected,
+                          );
+                        }
+                      },
                       canRemove: lines.length > 1,
                       onRemove: () => setDialogState(() {
                         lines.removeAt(index).dispose();
@@ -467,7 +534,7 @@ class _PurchaseRequestLineFields extends StatelessWidget {
     required this.index,
     required this.line,
     required this.products,
-    required this.onProductChanged,
+    required this.onSelectProduct,
     required this.canRemove,
     required this.onRemove,
   });
@@ -475,7 +542,7 @@ class _PurchaseRequestLineFields extends StatelessWidget {
   final int index;
   final _PurchaseRequestLine line;
   final List<Map<String, dynamic>> products;
-  final ValueChanged<String?> onProductChanged;
+  final Future<void> Function() onSelectProduct;
   final bool canRemove;
   final VoidCallback onRemove;
 
@@ -497,23 +564,24 @@ class _PurchaseRequestLineFields extends StatelessWidget {
                 ),
             ],
           ),
-          DropdownButtonFormField<String>(
-            initialValue: line.productCode,
-            isExpanded: true,
-            decoration: const InputDecoration(labelText: 'Product *'),
-            hint: const Text('Select product from Master Data'),
-            items: products
-                .map(
-                  (product) => DropdownMenuItem(
-                    value: product['code'].toString(),
+          InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: onSelectProduct,
+            child: InputDecorator(
+              decoration: const InputDecoration(labelText: 'Product *'),
+              child: Row(
+                children: [
+                  Expanded(
                     child: Text(
-                      '${product['code']} — ${product['description']}',
-                      overflow: TextOverflow.ellipsis,
+                      line.productCode == null
+                          ? 'Product'
+                          : _productLabel(line.productCode!),
                     ),
                   ),
-                )
-                .toList(),
-            onChanged: onProductChanged,
+                  const Icon(Icons.arrow_drop_down),
+                ],
+              ),
+            ),
           ),
           Row(
             children: [
@@ -554,4 +622,13 @@ class _PurchaseRequestLineFields extends StatelessWidget {
       ),
     ),
   );
+
+  String _productLabel(String code) {
+    for (final product in products) {
+      if (product['code']?.toString() == code) {
+        return '${product['code']} — ${product['description']}';
+      }
+    }
+    return code;
+  }
 }
