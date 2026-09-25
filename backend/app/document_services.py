@@ -326,7 +326,7 @@ def delivery_note_pdf_bytes(delivery: Any) -> bytes:
     styles = getSampleStyleSheet()
     center = ParagraphStyle("delivery-center", parent=styles["Normal"], alignment=TA_CENTER)
     story = [
-        Paragraph("<b>SURAT JALAN</b>", styles["Title"]),
+        Paragraph("<b>DELIVERY NOTE</b>", styles["Title"]),
         Paragraph(f"<b>{delivery.delivery_number}</b>", center),
         Spacer(1, 5 * mm),
         Table(

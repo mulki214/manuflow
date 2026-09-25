@@ -297,7 +297,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
                                 if (item['status']?.toString() != 'reversed')
                                   const PopupMenuItem(
                                     value: 'pdf',
-                                    child: Text('Download Surat Jalan'),
+                                    child: Text('Download Delivery Note'),
                                   ),
                                 if (canConfirm)
                                   const PopupMenuItem(
