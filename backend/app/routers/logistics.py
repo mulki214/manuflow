@@ -747,7 +747,11 @@ async def download_delivery_note_pdf(
         ship_to_address=order.ship_to_address,
         ship_to_contact=f"{order.ship_to_contact_person} — {order.ship_to_phone}",
         vehicle_number=record.vehicle_number,
-        transportation_name=transportation.name if transportation else record.transportation_code,
+        transportation_name=(
+            f"{transportation.carrier_name} — {transportation.vehicle_number}"
+            if transportation
+            else record.transportation_code
+        ),
         driver_name=record.driver_name,
         status_label=(
             "Delivered"
