@@ -84,7 +84,7 @@ async def create_request(data: PurchaseRequestCreate, db: AsyncSession = Depends
     record = PurchaseRequest(request_number=await next_number(db, data.request_date), request_date=data.request_date, department_code=current_user.department_code, notes=data.notes.strip(), created_by=current_user.id)
     for index, item in enumerate(data.items, 1):
         product = await db.get(Product, item.product_code)
-        if not product or not product.is_active: raise HTTPException(status_code=422, detail=f"Product {item.product_code} is not active")
+        if not product: raise HTTPException(status_code=422, detail=f"Product {item.product_code} was not found")
         record.items.append(PurchaseRequestItem(line_number=index, product_code=product.code, part_name=product.part_name, part_no=product.part_no, description=product.description, quantity=item.quantity, unit=item.unit.value, remark=item.remark.strip()))
     db.add(record); await db.commit(); return await response(db, await get_request(db, record.request_number), current_user)
 
