@@ -24,6 +24,9 @@ app.add_middleware(PurchasingDepartmentMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    # Flutter web selects an available localhost port dynamically in debug.
+    # Permit only local development origins in addition to configured origins.
+    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1):[0-9]+$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
