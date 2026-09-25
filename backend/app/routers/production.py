@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -11,6 +11,8 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.models import (
     AccessLevel,
+    BillOfMaterial,
+    BillOfMaterialItem,
     ConsumableDisposition,
     Department,
     FinishGoodReceipt,
@@ -36,11 +38,9 @@ from app.module_permissions import DepartmentModuleAccess, resolve_department_me
 from app.operational_services import actual_cycle_time_seconds, ng_limit_exceeded, require_whole_quantity
 from app.production_services import (
     child_segment_code,
-    effective_target_cycle_time,
     ensure_production_execution_reversible,
     generate_production_number,
     next_job_status,
-    validate_execution_quantities,
 )
 from app.schemas import (
     ConsumableDispositionCreate,
@@ -257,18 +257,6 @@ async def job_response(db: AsyncSession, record: WipLotJob) -> ProductionWipJobR
     process = await db.get(WipProcess, record.process_code)
     product = await db.get(Product, record.product_code)
     plant = await db.get(Plant, record.plant_code)
-    process_target = (
-        await db.execute(
-            select(ProductProcessStandard.target_cycle_time_seconds)
-            .where(
-                ProductProcessStandard.product_code == record.product_code,
-                ProductProcessStandard.process_code == record.process_code,
-                ProductProcessStandard.machine_code.is_(None),
-                ProductProcessStandard.is_active.is_(True),
-            )
-            .limit(1)
-        )
-    ).scalar_one_or_none()
     return ProductionWipJobResponse(
         id=record.id,
         source_transfer_number=record.source_transfer_number,
@@ -292,9 +280,7 @@ async def job_response(db: AsyncSession, record: WipLotJob) -> ProductionWipJobR
         current_quantity=record.current_quantity,
         status=record.status,
         can_complete=record.status in (WipLotStatus.queued, WipLotStatus.in_process) and record.current_quantity > 0,
-        target_cycle_time_seconds=effective_target_cycle_time(
-            product.default_cycle_time_seconds if product else None, process_target
-        ),
+        target_cycle_time_seconds=product.default_cycle_time_seconds if product else None,
         created_at=record.created_at,
         updated_at=record.updated_at,
     )
@@ -335,6 +321,9 @@ async def execution_response(db: AsyncSession, record: ProductionExecution) -> P
         break_duration_minutes=record.break_duration_minutes,
         cycle_time_seconds=record.cycle_time_seconds,
         observed_cycle_time_seconds=record.observed_cycle_time_seconds,
+        target_cycle_time_seconds=getattr(record, "target_cycle_time_seconds", None),
+        target_finish_at=getattr(record, "target_finish_at", None),
+        on_target=(record.ended_at <= record.target_finish_at if getattr(record, "target_finish_at", None) and record.ended_at else None),
         job_id=record.job_id,
         product_code=record.product_code,
         product_name=record.product_name,
@@ -560,18 +549,17 @@ async def complete_wip_job(
     try:
         for value, label in (
             (data.processing_quantity, "Processing Quantity"),
-            (data.good_quantity, "Good Quantity"),
             (data.repair_quantity, "Repair Quantity"),
             (data.ng_quantity, "NG Quantity"),
         ):
             require_whole_quantity(value, job.unit, label)
-        _, processing, good, repair, ng = validate_execution_quantities(
-            job.current_quantity,
-            data.processing_quantity,
-            data.good_quantity,
-            data.repair_quantity,
-            data.ng_quantity,
-        )
+        processing = quantity(data.processing_quantity)
+        repair = quantity(data.repair_quantity)
+        ng = quantity(data.ng_quantity)
+        if processing > job.current_quantity:
+            raise ValueError("Processing Quantity exceeds available WIP Quantity")
+        if repair + ng > processing:
+            raise ValueError("Repair and NG Quantity cannot exceed Processing Quantity")
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
@@ -611,10 +599,6 @@ async def complete_wip_job(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Next Process must be an active Production Process in the same Plant",
         )
-    if good > 0 and selected_next_code == job.process_code:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Next Process must differ from Current Process"
-        )
     repair_process = await db.get(WipProcess, data.repair_process_code) if repair > 0 else None
     if (
         repair > 0
@@ -651,8 +635,44 @@ async def complete_wip_job(
     else:
         output_product = await db.get(Product, data.output_product_code) if data.output_product_code else product
         output_unit = data.output_unit or job.unit
-    if good > 0 and not output_product:
+    if not output_product:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Output Product not found")
+    is_bom_conversion = output_product.code != job.product_code
+    good_input_quantity = quantity(processing - repair - ng)
+    if is_bom_conversion:
+        bom = await db.get(BillOfMaterial, output_product.code)
+        bom_items = list(
+            (
+                await db.execute(
+                    select(BillOfMaterialItem).where(
+                        BillOfMaterialItem.finished_product_code == output_product.code,
+                        BillOfMaterialItem.is_active.is_(True),
+                    )
+                )
+            ).scalars()
+        )
+        matching_item = next((item for item in bom_items if item.material_product_code == job.product_code), None)
+        if not bom or not matching_item or len(bom_items) != 1:
+            raise HTTPException(
+                status_code=422,
+                detail="Output conversion requires a single-material active BOM matching the WIP input product",
+            )
+        if matching_item.unit != job.unit or not bom.output_unit:
+            raise HTTPException(status_code=422, detail="BOM input/output units do not match this WIP conversion")
+        output_unit = bom.output_unit
+        good = quantity(good_input_quantity * bom.output_quantity / matching_item.quantity)
+        require_whole_quantity(good, output_unit, "Good Output Quantity")
+        if quantity(data.good_quantity) != good:
+            raise HTTPException(status_code=422, detail="Good Output Quantity must match the BOM conversion result")
+    else:
+        good = quantity(data.good_quantity)
+        require_whole_quantity(good, job.unit, "Good Quantity")
+        if good + repair + ng != processing:
+            raise HTTPException(status_code=422, detail="Good, Repair, and NG Quantity must equal Processing Quantity")
+    if good > 0 and selected_next_code == job.process_code:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Next Process must differ from Current Process"
+        )
     repair_route = await db.get(RepairRoute, data.repair_route_code) if data.repair_route_code else None
     repair_step = None
     if repair > 0 and repair_route:
@@ -705,6 +725,11 @@ async def complete_wip_job(
         cycle_time = actual_cycle_time_seconds(data.started_at, data.ended_at, data.break_duration_minutes, good)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    target_cycle_time = output_product.default_cycle_time_seconds
+    target_finish_at = None
+    if data.started_at and target_cycle_time is not None:
+        target_seconds = int((target_cycle_time * good).to_integral_value()) + data.break_duration_minutes * 60
+        target_finish_at = data.started_at + timedelta(seconds=target_seconds)
 
     record = ProductionExecution(
         production_number=await generate_production_number(db, data.process_date),
@@ -715,6 +740,8 @@ async def complete_wip_job(
         break_duration_minutes=data.break_duration_minutes,
         cycle_time_seconds=cycle_time,
         observed_cycle_time_seconds=data.observed_cycle_time_seconds,
+        target_cycle_time_seconds=target_cycle_time,
+        target_finish_at=target_finish_at,
         job_id=job.id,
         product_code=job.product_code,
         product_name=product.part_name,

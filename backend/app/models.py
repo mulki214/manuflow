@@ -896,6 +896,8 @@ class ProductionExecution(Base):
     break_duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     cycle_time_seconds: Mapped[Decimal | None] = mapped_column(Numeric(14, 3), nullable=True)
     observed_cycle_time_seconds: Mapped[Decimal | None] = mapped_column(Numeric(14, 3), nullable=True)
+    target_cycle_time_seconds: Mapped[Decimal | None] = mapped_column(Numeric(14, 3), nullable=True)
+    target_finish_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     job_id: Mapped[int] = mapped_column(ForeignKey("wip_lot_jobs.id", ondelete="RESTRICT"), nullable=False, index=True)
     product_code: Mapped[str] = mapped_column(ForeignKey("products.code", ondelete="RESTRICT"), nullable=False)
     product_name: Mapped[str] = mapped_column(String(200), nullable=False)

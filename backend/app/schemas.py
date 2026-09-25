@@ -1124,9 +1124,6 @@ class ProductionExecutionCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_outcomes(self) -> "ProductionExecutionCreate":
-        outcome_total = self.good_quantity + self.repair_quantity + self.ng_quantity
-        if outcome_total != self.processing_quantity:
-            raise ValueError("Good, Repair, and NG Quantity must equal Processing Quantity")
         if self.repair_quantity > 0 and not (self.repair_process_code or self.repair_route_code):
             raise ValueError("Repair Quantity requires a Repair Process or Repair Route")
         if self.started_at and self.ended_at and self.ended_at <= self.started_at:
@@ -1153,6 +1150,9 @@ class ProductionExecutionResponse(BaseModel):
     break_duration_minutes: int
     cycle_time_seconds: Decimal | None
     observed_cycle_time_seconds: Decimal | None
+    target_cycle_time_seconds: Decimal | None
+    target_finish_at: datetime | None
+    on_target: bool | None
     job_id: int
     product_code: str
     product_name: str

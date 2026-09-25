@@ -27,7 +27,6 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
   final _startTime = TextEditingController(text: '08:00');
   final _endTime = TextEditingController(text: '09:00');
   final _breakMinutes = TextEditingController(text: '0');
-  final _observedCycle = TextEditingController();
   final _ngOverrideReason = TextEditingController();
   final _notes = TextEditingController();
   DateTime _date = DateTime.now();
@@ -42,6 +41,7 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
   List<Map<String, dynamic>> _machines = [];
   List<Map<String, dynamic>> _products = [];
   List<Map<String, dynamic>> _repairRoutes = [];
+  Map<String, dynamic>? _outputBom;
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -59,6 +59,18 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
     _good.text = _number(widget.job.currentQuantity);
     _outputProduct = widget.job.productCode;
     _outputUnit = widget.job.unit;
+    for (final controller in [
+      _processing,
+      _good,
+      _repair,
+      _ng,
+      _startTime,
+      _breakMinutes,
+    ]) {
+      controller.addListener(() {
+        if (mounted) setState(() {});
+      });
+    }
     _load();
   }
 
@@ -71,7 +83,6 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
     _startTime.dispose();
     _endTime.dispose();
     _breakMinutes.dispose();
-    _observedCycle.dispose();
     _ngOverrideReason.dispose();
     _notes.dispose();
     super.dispose();
@@ -123,16 +134,101 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
     if (selected != null) setState(() => _date = selected);
   }
 
+  bool get _isBomConversion =>
+      !_isMultiStageProduct &&
+      _outputProduct != null &&
+      _outputProduct != widget.job.productCode;
+
+  Map<String, dynamic>? get _outputProductRecord {
+    for (final product in _products) {
+      if (product['code']?.toString() == _outputProduct) return product;
+    }
+    return null;
+  }
+
+  double get _calculatedGood {
+    if (!_isBomConversion || _outputBom == null) return _value(_good);
+    final items = (_outputBom!['items'] as List).cast<Map<String, dynamic>>();
+    final material = items
+        .where(
+          (item) =>
+              item['material_product_code']?.toString() ==
+              widget.job.productCode,
+        )
+        .cast<Map<String, dynamic>?>()
+        .firstWhere((item) => item != null, orElse: () => null);
+    if (material == null) return 0;
+    final inputPerBatch = double.tryParse(material['quantity'].toString()) ?? 0;
+    final outputPerBatch =
+        double.tryParse(_outputBom!['output_quantity'].toString()) ?? 0;
+    if (inputPerBatch <= 0) return 0;
+    final usableInput = (_value(_processing) - _value(_repair) - _value(_ng))
+        .clamp(0, double.infinity)
+        .toDouble();
+    return (usableInput / inputPerBatch) * outputPerBatch;
+  }
+
+  String get _effectiveOutputUnit => _isBomConversion
+      ? (_outputBom?['output_unit']?.toString() ??
+            _outputUnit ??
+            widget.job.unit)
+      : (_outputUnit ?? widget.job.unit);
+
+  double? get _targetCycle => double.tryParse(
+    _outputProductRecord?['default_cycle_time_seconds']?.toString() ?? '',
+  );
+
+  DateTime? get _targetFinish {
+    final start = _dateTimeValue(_date, _startTime.text);
+    final cycle = _targetCycle;
+    if (start == null || cycle == null || cycle <= 0) return null;
+    return start.add(
+      Duration(
+        seconds:
+            (cycle * _calculatedGood).round() +
+            (_value(_breakMinutes) * 60).round(),
+      ),
+    );
+  }
+
+  Future<void> _selectOutputProduct(String? value) async {
+    setState(() {
+      _outputProduct = value;
+      _outputBom = null;
+    });
+    if (value == null || value == widget.job.productCode) return;
+    try {
+      final bom = await widget.api.getJson(
+        '/master-data/products/${Uri.encodeComponent(value)}/bom',
+      );
+      if (mounted) {
+        setState(() {
+          _outputBom = bom;
+          _outputUnit = bom['output_unit']?.toString();
+        });
+      }
+    } on ApiException catch (exception) {
+      if (mounted) setState(() => _error = exception.message);
+    }
+  }
+
   double _value(TextEditingController controller) =>
       double.tryParse(controller.text.trim()) ?? 0;
 
   Future<void> _save() async {
     if (!_key.currentState!.validate()) return;
     final processing = _value(_processing);
-    final good = _value(_good);
+    final good = _isBomConversion ? _calculatedGood : _value(_good);
     final repair = _value(_repair);
     final ng = _value(_ng);
-    if ((good + repair + ng - processing).abs() > 0.0001) {
+    if (_isBomConversion && _outputBom == null) {
+      setState(
+        () => _error =
+            'Selected output product needs a valid single-material BOM.',
+      );
+      return;
+    }
+    if (!_isBomConversion && (good + repair + ng - processing).abs() > 0.0001) {
       setState(
         () => _error =
             'Good + Repair + NG Quantity must equal Processing Quantity.',
@@ -160,7 +256,6 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
           'started_at': _dateTime(_date, _startTime.text),
           'ended_at': _dateTime(_date, _endTime.text),
           'break_duration_minutes': int.tryParse(_breakMinutes.text) ?? 0,
-          'observed_cycle_time_seconds': double.tryParse(_observedCycle.text),
           'ng_override_reason': _ngOverrideReason.text.trim().isEmpty
               ? null
               : _ngOverrideReason.text.trim(),
@@ -175,7 +270,7 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
               ? (_isMultiStageProduct ? widget.job.productCode : _outputProduct)
               : null,
           'output_unit': good > 0
-              ? (_isMultiStageProduct ? widget.job.unit : _outputUnit)
+              ? (_isMultiStageProduct ? widget.job.unit : _effectiveOutputUnit)
               : null,
           'machine_code': _machine,
           'notes': _notes.text.trim(),
@@ -246,11 +341,17 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
                           'Before Process',
                           '${widget.job.processCode} — ${widget.job.processName}',
                         ),
-                        if (widget.job.targetCycleTimeSeconds != null)
+                        if (_targetCycle != null)
                           _summary(
-                            'Target Cycle Time (automatic)',
-                            '${_number(widget.job.targetCycleTimeSeconds!)} seconds',
+                            'Target Cycle Time',
+                            '${_number(_targetCycle!)} seconds / ${unitLabel(_effectiveOutputUnit)}',
                           ),
+                        _summary(
+                          'Target Finish Time',
+                          _targetFinish == null
+                              ? 'Set start time and cycle time'
+                              : '${_targetFinish!.hour.toString().padLeft(2, '0')}:${_targetFinish!.minute.toString().padLeft(2, '0')}',
+                        ),
                         _summary(
                           'Available WIP',
                           '${_number(widget.job.currentQuantity)} ${unitLabel(widget.job.unit)}',
@@ -344,12 +445,6 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
                           width: 180,
                           number: true,
                         ),
-                        _textField(
-                          _observedCycle,
-                          'Observed Cycle (seconds)',
-                          width: 220,
-                          number: true,
-                        ),
                       ],
                     ),
                     const SizedBox(height: 14),
@@ -384,15 +479,25 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: 8),
+                    Text(
+                      'Good output: ${unitLabel(_effectiveOutputUnit)} • Repair / NG: ${unitLabel(widget.job.unit)}',
+                      style: const TextStyle(color: Color(0xFF667085)),
+                    ),
+                    const SizedBox(height: 8),
                     Wrap(
                       spacing: 12,
                       runSpacing: 12,
                       children: [
-                        _quantityField(
-                          _good,
-                          'Good Quantity',
-                          unitLabel(widget.job.unit),
-                        ),
+                        _isBomConversion
+                            ? _readOnlyQuantity(
+                                'Good Quantity',
+                                _number(_calculatedGood),
+                              )
+                            : _quantityField(
+                                _good,
+                                'Good Quantity',
+                                widget.job.unit,
+                              ),
                         _quantityField(
                           _repair,
                           'Repair Quantity',
@@ -401,7 +506,8 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
                         _quantityField(
                           _ng,
                           'NG Quantity',
-                          unitLabel(widget.job.unit),
+                          widget.job.unit,
+                          danger: true,
                         ),
                       ],
                     ),
@@ -529,26 +635,31 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
                               ),
                             )
                             .toList(),
-                        onChanged: (value) =>
-                            setState(() => _outputProduct = value),
+                        onChanged: _selectOutputProduct,
                       ),
                       const SizedBox(height: 14),
-                      DropdownButtonFormField<String>(
-                        initialValue: _outputUnit,
-                        decoration: const InputDecoration(
-                          labelText: 'Good Output Unit',
+                      if (_isBomConversion)
+                        Text(
+                          'BOM conversion output unit: ${unitLabel(_effectiveOutputUnit)}',
                         ),
-                        items: inventoryUnits
-                            .map(
-                              (unit) => DropdownMenuItem(
-                                value: unit,
-                                child: Text(unitLabel(unit)),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (value) =>
-                            setState(() => _outputUnit = value),
-                      ),
+                      if (_isBomConversion) const SizedBox(height: 14),
+                      if (!_isBomConversion)
+                        DropdownButtonFormField<String>(
+                          initialValue: _outputUnit,
+                          decoration: const InputDecoration(
+                            labelText: 'Good Output Unit',
+                          ),
+                          items: inventoryUnits
+                              .map(
+                                (unit) => DropdownMenuItem(
+                                  value: unit,
+                                  child: Text(unitLabel(unit)),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (value) =>
+                              setState(() => _outputUnit = value),
+                        ),
                       const SizedBox(height: 14),
                     ],
                     TextFormField(
@@ -598,17 +709,39 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
   Widget _quantityField(
     TextEditingController controller,
     String label,
-    String unit,
-  ) => SizedBox(
+    String unit, {
+    bool danger = false,
+  }) => SizedBox(
     width: 220,
     child: TextFormField(
       controller: controller,
       keyboardType: TextInputType.numberWithOptions(
         decimal: !isDiscreteUnit(unit),
       ),
-      decoration: InputDecoration(labelText: '$label ($unit) *'),
+      decoration: InputDecoration(
+        labelText: '$label *',
+        labelStyle: danger ? const TextStyle(color: Colors.red) : null,
+        enabledBorder: danger
+            ? const OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.red),
+              )
+            : null,
+        focusedBorder: danger
+            ? const OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.red, width: 2),
+              )
+            : null,
+      ),
       validator: (value) =>
           quantityValidationError(value, unit, allowZero: true),
+    ),
+  );
+
+  Widget _readOnlyQuantity(String label, String value) => SizedBox(
+    width: 220,
+    child: InputDecorator(
+      decoration: InputDecoration(labelText: label),
+      child: Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
     ),
   );
 
@@ -641,6 +774,11 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
       hour,
       minute,
     ).toIso8601String();
+  }
+
+  DateTime? _dateTimeValue(DateTime date, String time) {
+    final value = _dateTime(date, time);
+    return value == null ? null : DateTime.tryParse(value);
   }
 
   Widget _summary(String label, String value) => SizedBox(
