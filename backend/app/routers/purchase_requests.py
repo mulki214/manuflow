@@ -85,7 +85,6 @@ async def create_request(data: PurchaseRequestCreate, db: AsyncSession = Depends
     for index, item in enumerate(data.items, 1):
         product = await db.get(Product, item.product_code)
         if not product or not product.is_active: raise HTTPException(status_code=422, detail=f"Product {item.product_code} is not active")
-        if product.unit != item.unit.value: raise HTTPException(status_code=422, detail=f"Unit must match product {product.code}")
         record.items.append(PurchaseRequestItem(line_number=index, product_code=product.code, part_name=product.part_name, part_no=product.part_no, description=product.description, quantity=item.quantity, unit=item.unit.value, remark=item.remark.strip()))
     db.add(record); await db.commit(); return await response(db, await get_request(db, record.request_number), current_user)
 

@@ -215,12 +215,7 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                       line: lines[index],
                       products: _products,
                       onProductChanged: (value) => setDialogState(() {
-                        final product = _products.firstWhere(
-                          (item) => item['code']?.toString() == value,
-                        );
                         lines[index].productCode = value;
-                        lines[index].unit.text =
-                            product['unit']?.toString() ?? '';
                       }),
                       canRemove: lines.length > 1,
                       onRemove: () => setDialogState(() {
@@ -260,7 +255,7 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                   (line) =>
                       line.productCode == null ||
                       line.quantity.text.trim().isEmpty ||
-                      line.unit.text.trim().isEmpty,
+                      line.unit == null,
                 )) {
                   ScaffoldMessenger.of(x).showSnackBar(
                     const SnackBar(
@@ -283,7 +278,7 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                         {
                           'product_code': line.productCode,
                           'quantity': line.quantity.text.trim(),
-                          'unit': line.unit.text.trim(),
+                          'unit': line.unit,
                           'remark': line.remark.text.trim(),
                         },
                     ],
@@ -314,12 +309,11 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
 class _PurchaseRequestLine {
   String? productCode;
   final quantity = TextEditingController();
-  final unit = TextEditingController(text: 'pcs');
+  String? unit = 'pcs';
   final remark = TextEditingController();
 
   void dispose() {
     quantity.dispose();
-    unit.dispose();
     remark.dispose();
   }
 }
@@ -390,10 +384,20 @@ class _PurchaseRequestLineFields extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: TextField(
-                  controller: line.unit,
-                  readOnly: true,
-                  decoration: const InputDecoration(labelText: 'Unit'),
+                child: DropdownButtonFormField<String>(
+                  initialValue: line.unit,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Unit *'),
+                  items: const [
+                    DropdownMenuItem(value: 'pcs', child: Text('pcs')),
+                    DropdownMenuItem(value: 'bar', child: Text('bar')),
+                    DropdownMenuItem(value: 'liter', child: Text('liter')),
+                    DropdownMenuItem(value: 'pail', child: Text('pail')),
+                    DropdownMenuItem(value: 'kg', child: Text('kg')),
+                    DropdownMenuItem(value: 'ton', child: Text('ton')),
+                    DropdownMenuItem(value: 'gram', child: Text('gram')),
+                  ],
+                  onChanged: (value) => line.unit = value,
                 ),
               ),
             ],
