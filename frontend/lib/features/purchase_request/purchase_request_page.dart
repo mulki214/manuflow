@@ -15,6 +15,7 @@ class PurchaseRequestPage extends StatefulWidget {
 
 class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
   List<Map<String, dynamic>> _items = [];
+  List<Map<String, dynamic>> _products = [];
   String? _error;
   bool _loading = true;
   @override
@@ -29,13 +30,18 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
       _error = null;
     });
     try {
-      final r = await widget.auth.api.getJson(
-        '/purchase-requests?page=1&size=100',
-      );
+      final responses = await Future.wait([
+        widget.auth.api.getJson('/purchase-requests?page=1&size=100'),
+        widget.auth.api.getJson('/master-data/products?page=1&size=100'),
+      ]);
       if (mounted) {
-        setState(
-          () => _items = (r['items'] as List).cast<Map<String, dynamic>>(),
-        );
+        setState(() {
+          _items = (responses[0]['items'] as List).cast<Map<String, dynamic>>();
+          _products = (responses[1]['items'] as List)
+              .cast<Map<String, dynamic>>()
+              .where((product) => product['is_active'] != false)
+              .toList();
+        });
       }
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
@@ -207,6 +213,15 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                     _PurchaseRequestLineFields(
                       index: index,
                       line: lines[index],
+                      products: _products,
+                      onProductChanged: (value) => setDialogState(() {
+                        final product = _products.firstWhere(
+                          (item) => item['code']?.toString() == value,
+                        );
+                        lines[index].productCode = value;
+                        lines[index].unit.text =
+                            product['unit']?.toString() ?? '';
+                      }),
                       canRemove: lines.length > 1,
                       onRemove: () => setDialogState(() {
                         lines.removeAt(index).dispose();
@@ -243,7 +258,7 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
               onPressed: () async {
                 if (lines.any(
                   (line) =>
-                      line.product.text.trim().isEmpty ||
+                      line.productCode == null ||
                       line.quantity.text.trim().isEmpty ||
                       line.unit.text.trim().isEmpty,
                 )) {
@@ -266,7 +281,7 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                     'items': [
                       for (final line in lines)
                         {
-                          'product_code': line.product.text.trim(),
+                          'product_code': line.productCode,
                           'quantity': line.quantity.text.trim(),
                           'unit': line.unit.text.trim(),
                           'remark': line.remark.text.trim(),
@@ -297,13 +312,12 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
 }
 
 class _PurchaseRequestLine {
-  final product = TextEditingController();
+  String? productCode;
   final quantity = TextEditingController();
   final unit = TextEditingController(text: 'pcs');
   final remark = TextEditingController();
 
   void dispose() {
-    product.dispose();
     quantity.dispose();
     unit.dispose();
     remark.dispose();
@@ -314,12 +328,16 @@ class _PurchaseRequestLineFields extends StatelessWidget {
   const _PurchaseRequestLineFields({
     required this.index,
     required this.line,
+    required this.products,
+    required this.onProductChanged,
     required this.canRemove,
     required this.onRemove,
   });
 
   final int index;
   final _PurchaseRequestLine line;
+  final List<Map<String, dynamic>> products;
+  final ValueChanged<String?> onProductChanged;
   final bool canRemove;
   final VoidCallback onRemove;
 
@@ -341,9 +359,23 @@ class _PurchaseRequestLineFields extends StatelessWidget {
                 ),
             ],
           ),
-          TextField(
-            controller: line.product,
-            decoration: const InputDecoration(labelText: 'Product Code *'),
+          DropdownButtonFormField<String>(
+            initialValue: line.productCode,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Product *'),
+            hint: const Text('Select product from Master Data'),
+            items: products
+                .map(
+                  (product) => DropdownMenuItem(
+                    value: product['code'].toString(),
+                    child: Text(
+                      '${product['code']} — ${product['description']}',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: onProductChanged,
           ),
           Row(
             children: [
@@ -360,7 +392,8 @@ class _PurchaseRequestLineFields extends StatelessWidget {
               Expanded(
                 child: TextField(
                   controller: line.unit,
-                  decoration: const InputDecoration(labelText: 'Unit *'),
+                  readOnly: true,
+                  decoration: const InputDecoration(labelText: 'Unit'),
                 ),
               ),
             ],
