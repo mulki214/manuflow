@@ -80,6 +80,15 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
     }
   }
 
+  String _plantLabel(String code) {
+    for (final plant in _plants) {
+      if (plant['code']?.toString() == code) {
+        return '${plant['code']} — ${plant['name']}';
+      }
+    }
+    return code;
+  }
+
   Future<void> _review(Map<String, dynamic> pr, bool approve) async {
     String reason = '';
     if (!approve) {
@@ -227,27 +236,70 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  DropdownButtonFormField<String>(
-                    initialValue: plantCode,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Delivery Plant *',
-                    ),
-                    items: _plants
-                        .map(
-                          (plant) => DropdownMenuItem(
-                            value: plant['code'].toString(),
-                            child: Text('${plant['code']} — ${plant['name']}'),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: _plants.isEmpty
+                        ? () => ScaffoldMessenger.of(x).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'No Receiving Plant is available. Create a Plant in Master Data first.',
+                              ),
+                            ),
+                          )
+                        : () async {
+                            final selected = await showDialog<String>(
+                              context: x,
+                              builder: (pickerContext) => AlertDialog(
+                                title: const Text('Select Receiving Plant'),
+                                content: SizedBox(
+                                  width: 420,
+                                  child: ListView.builder(
+                                    shrinkWrap: true,
+                                    itemCount: _plants.length,
+                                    itemBuilder: (_, index) {
+                                      final plant = _plants[index];
+                                      final code = plant['code'].toString();
+                                      return ListTile(
+                                        title: Text(
+                                          '${plant['code']} — ${plant['name']}',
+                                        ),
+                                        trailing: code == plantCode
+                                            ? const Icon(Icons.check)
+                                            : null,
+                                        onTap: () =>
+                                            Navigator.pop(pickerContext, code),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                            );
+                            if (selected != null) {
+                              setDialogState(() => plantCode = selected);
+                            }
+                          },
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Receiving Plant *',
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              plantCode == null
+                                  ? 'Select Receiving Plant'
+                                  : _plantLabel(plantCode!),
+                            ),
                           ),
-                        )
-                        .toList(),
-                    onChanged: (value) =>
-                        setDialogState(() => plantCode = value),
+                          const Icon(Icons.arrow_drop_down),
+                        ],
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 8),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('Requested Delivery Date *'),
+                    title: const Text('Expected Arrival Date *'),
                     subtitle: Text(
                       '${requestedDeliveryDate.year.toString().padLeft(4, '0')}-${requestedDeliveryDate.month.toString().padLeft(2, '0')}-${requestedDeliveryDate.day.toString().padLeft(2, '0')}',
                     ),
