@@ -6,6 +6,7 @@ import '../../shared/app_module_scaffold.dart';
 import '../../shared/app_sidebar.dart';
 import '../../shared/modal_widgets.dart';
 import '../../shared/product_qr_label_dialog.dart';
+import '../../shared/searchable_select_field.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
 
@@ -90,53 +91,6 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
       }
     }
     return code;
-  }
-
-  Future<void> _refreshPlants() async {
-    try {
-      final response = await widget.auth.api.getJson(
-        '/master-data/plants?page=1&size=100',
-      );
-      if (mounted) {
-        setState(() {
-          _plants = (response['items'] as List).cast<Map<String, dynamic>>();
-        });
-      }
-    } on ApiException catch (exception) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Unable to load Receiving Plants: ${exception.message}',
-            ),
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _refreshProducts() async {
-    try {
-      final response = await widget.auth.api.getJson(
-        '/master-data/products?page=1&size=100',
-      );
-      if (mounted) {
-        setState(() {
-          _products = (response['items'] as List)
-              .cast<Map<String, dynamic>>()
-              .where((product) => product['is_active'] != false)
-              .toList();
-        });
-      }
-    } on ApiException catch (exception) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Unable to load Products: ${exception.message}'),
-          ),
-        );
-      }
-    }
   }
 
   Future<void> _review(Map<String, dynamic> pr, bool approve) async {
@@ -364,71 +318,25 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () async {
-                      if (_plants.isEmpty) {
-                        await _refreshPlants();
-                      }
-                      if (!x.mounted) return;
-                      if (_plants.isEmpty) {
-                        ScaffoldMessenger.of(x).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'No Receiving Plant is available. Create a Plant in Master Data first.',
-                            ),
+                  SearchableSelectField<String>(
+                    value: plantCode,
+                    labelText: 'Receiving Plant *',
+                    searchHint: 'Search receiving plant',
+                    options: _plants
+                        .map(
+                          (plant) => SearchableSelectOption(
+                            value: plant['code'].toString(),
+                            label: '${plant['code']} — ${plant['name']}',
+                            searchTerms: [
+                              plant['code'].toString(),
+                              plant['name']?.toString() ?? '',
+                            ],
                           ),
-                        );
-                        return;
-                      }
-                      final selected = await showDialog<String>(
-                        context: x,
-                        builder: (pickerContext) => AlertDialog(
-                          title: const Text('Select Receiving Plant'),
-                          content: SizedBox(
-                            width: 420,
-                            child: ListView.builder(
-                              shrinkWrap: true,
-                              itemCount: _plants.length,
-                              itemBuilder: (_, index) {
-                                final plant = _plants[index];
-                                final code = plant['code'].toString();
-                                return ListTile(
-                                  title: Text(
-                                    '${plant['code']} — ${plant['name']}',
-                                  ),
-                                  trailing: code == plantCode
-                                      ? const Icon(Icons.check)
-                                      : null,
-                                  onTap: () =>
-                                      Navigator.pop(pickerContext, code),
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-                      );
-                      if (selected != null) {
-                        setDialogState(() => plantCode = selected);
-                      }
-                    },
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Receiving Plant *',
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              plantCode == null
-                                  ? 'Select Receiving Plant'
-                                  : _plantLabel(plantCode!),
-                            ),
-                          ),
-                          const Icon(Icons.arrow_drop_down),
-                        ],
-                      ),
-                    ),
+                        )
+                        .toList(),
+                    onChanged: (value) =>
+                        setDialogState(() => plantCode = value),
+                    validator: (value) => value == null ? 'Required' : null,
                   ),
                   const SizedBox(height: 8),
                   ListTile(
@@ -458,52 +366,9 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                       index: index,
                       line: lines[index],
                       products: _products,
-                      onSelectProduct: () async {
-                        if (_products.isEmpty) await _refreshProducts();
-                        if (!x.mounted) return;
-                        if (_products.isEmpty) {
-                          ScaffoldMessenger.of(x).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'No Product is available in Master Data.',
-                              ),
-                            ),
-                          );
-                          return;
-                        }
-                        final selected = await showDialog<String>(
-                          context: x,
-                          builder: (pickerContext) => AlertDialog(
-                            title: const Text('Select Product'),
-                            content: SizedBox(
-                              width: 520,
-                              child: ListView.builder(
-                                shrinkWrap: true,
-                                itemCount: _products.length,
-                                itemBuilder: (_, productIndex) {
-                                  final product = _products[productIndex];
-                                  final code = product['code'].toString();
-                                  return ListTile(
-                                    title: Text(
-                                      '${product['code']} — ${product['description']}',
-                                    ),
-                                    trailing: code == lines[index].productCode
-                                        ? const Icon(Icons.check)
-                                        : null,
-                                    onTap: () =>
-                                        Navigator.pop(pickerContext, code),
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
-                        );
-                        if (selected != null) {
-                          setDialogState(
-                            () => lines[index].productCode = selected,
-                          );
-                        }
-                      },
+                      onChanged: (value) => setDialogState(
+                        () => lines[index].productCode = value,
+                      ),
                       canRemove: lines.length > 1,
                       onRemove: () => setDialogState(() {
                         lines.removeAt(index).dispose();
@@ -674,13 +539,19 @@ class _PurchaseRequestApprovalDialogState
     for (final line in widget.lines) {
       final quantity = double.tryParse(line.approvedQuantity.text.trim());
       if (line.approved && (quantity == null || quantity <= 0)) {
-        setState(() => _error = 'Enter an approved quantity for every selected item.');
+        setState(
+          () => _error = 'Enter an approved quantity for every selected item.',
+        );
         return;
       }
-      final changed = line.approved &&
+      final changed =
+          line.approved &&
           line.approvedQuantity.text.trim() != line.requestedQuantity;
       if ((!line.approved || changed) && line.reason.text.trim().length < 3) {
-        setState(() => _error = 'A reason is required for a rejected or adjusted item.');
+        setState(
+          () =>
+              _error = 'A reason is required for a rejected or adjusted item.',
+        );
         return;
       }
     }
@@ -733,7 +604,9 @@ class _PurchaseRequestApprovalDialogState
                         contentPadding: EdgeInsets.zero,
                         value: line.approved,
                         title: Text(line.productLabel),
-                        subtitle: Text('Requested: ${line.requestedQuantity} ${line.unit}'),
+                        subtitle: Text(
+                          'Requested: ${line.requestedQuantity} ${line.unit}',
+                        ),
                         onChanged: _saving
                             ? null
                             : (value) => setState(
@@ -746,7 +619,10 @@ class _PurchaseRequestApprovalDialogState
                             child: TextField(
                               controller: line.approvedQuantity,
                               enabled: line.approved && !_saving,
-                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
                               decoration: InputDecoration(
                                 labelText: 'Approved Quantity (${line.unit})',
                               ),
@@ -757,7 +633,9 @@ class _PurchaseRequestApprovalDialogState
                             child: TextField(
                               controller: line.reason,
                               enabled: !_saving,
-                              decoration: const InputDecoration(labelText: 'Reason'),
+                              decoration: const InputDecoration(
+                                labelText: 'Reason',
+                              ),
                             ),
                           ),
                         ],
@@ -769,7 +647,10 @@ class _PurchaseRequestApprovalDialogState
             ),
             if (_error != null) ...[
               const SizedBox(height: 8),
-              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
             ],
           ],
         ),
@@ -802,10 +683,8 @@ class _PurchaseRequestDetailDialog extends StatelessWidget {
     return result.isEmpty ? '-' : result;
   }
 
-  String _quantity(Map<String, dynamic> item) => formatQuantity(
-    item['quantity'],
-    item['unit']?.toString() ?? 'pcs',
-  );
+  String _quantity(Map<String, dynamic> item) =>
+      formatQuantity(item['quantity'], item['unit']?.toString() ?? 'pcs');
 
   @override
   Widget build(BuildContext context) {
@@ -849,7 +728,10 @@ class _PurchaseRequestDetailDialog extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 20),
-              Text('Requested Products', style: Theme.of(context).textTheme.titleMedium),
+              Text(
+                'Requested Products',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
               const SizedBox(height: 8),
               ModalHorizontalScroll(
                 child: DataTable(
@@ -873,13 +755,50 @@ class _PurchaseRequestDetailDialog extends StatelessWidget {
                               CopyableCodeText(_text(item['product_code'])),
                             ),
                             DataCell(SelectableText(_text(item['part_no']))),
-                            DataCell(SizedBox(width: 220, child: SelectableText(_text(item['description'])))),
-                            DataCell(Text('${_quantity(item)} ${_text(item['unit'])}')),
-                            DataCell(Text(item['approved_quantity'] == null ? '-' : '${formatQuantity(item['approved_quantity'], item['unit']?.toString() ?? 'pcs')} ${_text(item['unit'])}')),
-                            DataCell(Text(_text(item['approval_status']).replaceAll('_', ' '))),
-                            DataCell(SizedBox(width: 180, child: SelectableText(_text(item['review_reason'])))),
-                            DataCell(SizedBox(width: 180, child: SelectableText(_text(item['remark'])))),
-                            DataCell(CopyableCodeText(_text(item['purchase_order_number']))),
+                            DataCell(
+                              SizedBox(
+                                width: 220,
+                                child: SelectableText(
+                                  _text(item['description']),
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              Text('${_quantity(item)} ${_text(item['unit'])}'),
+                            ),
+                            DataCell(
+                              Text(
+                                item['approved_quantity'] == null
+                                    ? '-'
+                                    : '${formatQuantity(item['approved_quantity'], item['unit']?.toString() ?? 'pcs')} ${_text(item['unit'])}',
+                              ),
+                            ),
+                            DataCell(
+                              Text(
+                                _text(
+                                  item['approval_status'],
+                                ).replaceAll('_', ' '),
+                              ),
+                            ),
+                            DataCell(
+                              SizedBox(
+                                width: 180,
+                                child: SelectableText(
+                                  _text(item['review_reason']),
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              SizedBox(
+                                width: 180,
+                                child: SelectableText(_text(item['remark'])),
+                              ),
+                            ),
+                            DataCell(
+                              CopyableCodeText(
+                                _text(item['purchase_order_number']),
+                              ),
+                            ),
                           ],
                         ),
                       )
@@ -927,17 +846,21 @@ class _PurchaseRequestDetailDialog extends StatelessWidget {
     );
   }
 
-  Widget _detail(String label, String value, {double maxWidth = 260}) => SizedBox(
-    width: maxWidth,
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(color: Color(0xFF667085), fontSize: 12)),
-        const SizedBox(height: 3),
-        DetailValue(label: label, value: value),
-      ],
-    ),
-  );
+  Widget _detail(String label, String value, {double maxWidth = 260}) =>
+      SizedBox(
+        width: maxWidth,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(color: Color(0xFF667085), fontSize: 12),
+            ),
+            const SizedBox(height: 3),
+            DetailValue(label: label, value: value),
+          ],
+        ),
+      );
 
   Widget _qrSignature(String label, String name, String payload) => SizedBox(
     width: 150,
@@ -980,7 +903,7 @@ class _PurchaseRequestLineFields extends StatelessWidget {
     required this.index,
     required this.line,
     required this.products,
-    required this.onSelectProduct,
+    required this.onChanged,
     required this.canRemove,
     required this.onRemove,
   });
@@ -988,7 +911,7 @@ class _PurchaseRequestLineFields extends StatelessWidget {
   final int index;
   final _PurchaseRequestLine line;
   final List<Map<String, dynamic>> products;
-  final Future<void> Function() onSelectProduct;
+  final ValueChanged<String?> onChanged;
   final bool canRemove;
   final VoidCallback onRemove;
 
@@ -1010,24 +933,26 @@ class _PurchaseRequestLineFields extends StatelessWidget {
                 ),
             ],
           ),
-          InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: onSelectProduct,
-            child: InputDecorator(
-              decoration: const InputDecoration(labelText: 'Product *'),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      line.productCode == null
-                          ? 'Product'
-                          : _productLabel(line.productCode!),
-                    ),
+          SearchableSelectField<String>(
+            value: line.productCode,
+            labelText: 'Product *',
+            searchHint: 'Search product',
+            options: products
+                .map(
+                  (product) => SearchableSelectOption(
+                    value: product['code'].toString(),
+                    label: '${product['code']} — ${product['description']}',
+                    searchTerms: [
+                      product['code'].toString(),
+                      product['description']?.toString() ?? '',
+                      product['part_name']?.toString() ?? '',
+                      product['part_no']?.toString() ?? '',
+                    ],
                   ),
-                  const Icon(Icons.arrow_drop_down),
-                ],
-              ),
-            ),
+                )
+                .toList(),
+            onChanged: onChanged,
+            validator: (value) => value == null ? 'Required' : null,
           ),
           Row(
             children: [
@@ -1068,13 +993,4 @@ class _PurchaseRequestLineFields extends StatelessWidget {
       ),
     ),
   );
-
-  String _productLabel(String code) {
-    for (final product in products) {
-      if (product['code']?.toString() == code) {
-        return '${product['code']} — ${product['description']}';
-      }
-    }
-    return code;
-  }
 }

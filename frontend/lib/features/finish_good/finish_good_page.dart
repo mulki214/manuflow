@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
 import '../../shared/app_module_scaffold.dart';
+import '../../shared/searchable_select_field.dart';
 import '../../shared/app_sidebar.dart' show AppModule;
 import '../../shared/product_qr_label_dialog.dart';
 import '../../shared/units.dart';
@@ -97,15 +98,20 @@ class _FinishGoodPageState extends State<FinishGoodPage> {
                   '${formatQuantity(job['quantity'], job['unit'].toString())} ${unitLabel(job['unit'].toString())}',
                 ),
                 const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(
-                    labelText: 'Finished Goods Location *',
-                  ),
-                  items: locations
+                SearchableSelectField<String>(
+                  value: locationCode,
+                  labelText: 'Finished Goods Location *',
+                  searchHint: 'Search finished goods location',
+                  options: locations
                       .map(
-                        (item) => DropdownMenuItem(
+                        (item) => SearchableSelectOption(
                           value: item['code'].toString(),
-                          child: Text('${item['code']} — ${item['name']}'),
+                          label: '${item['code']} — ${item['name']}',
+                          searchTerms: [
+                            item['code'].toString(),
+                            item['name']?.toString() ?? '',
+                            item['storage_name']?.toString() ?? '',
+                          ],
                         ),
                       )
                       .toList(),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
 import '../../shared/units.dart';
+import '../../shared/searchable_select_field.dart';
 
 class ConsumableDispositionDialog extends StatefulWidget {
   const ConsumableDispositionDialog({
@@ -128,19 +129,21 @@ class _ConsumableDispositionDialogState
           : SingleChildScrollView(
               child: Column(
                 children: [
-                  DropdownButtonFormField<int>(
-                    initialValue: _lotId,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Consumable Stock Lot *',
-                    ),
-                    items: _lots
+                  SearchableSelectField<int>(
+                    value: _lotId,
+                    labelText: 'Consumable Stock Lot *',
+                    searchHint: 'Search product or lot',
+                    options: _lots
                         .map(
-                          (lot) => DropdownMenuItem<int>(
+                          (lot) => SearchableSelectOption(
                             value: lot['lot_id'] as int,
-                            child: Text(
-                              '${lot['product_code']} — Lot ${lot['lot_number']} — ${formatQuantity(lot['quantity'], lot['unit'].toString())} ${unitLabel(lot['unit'].toString())}',
-                            ),
+                            label:
+                                '${lot['product_code']} — Lot ${lot['lot_number']} — ${formatQuantity(lot['quantity'], lot['unit'].toString())} ${unitLabel(lot['unit'].toString())}',
+                            searchTerms: [
+                              lot['product_code']?.toString() ?? '',
+                              lot['lot_number']?.toString() ?? '',
+                              lot['description']?.toString() ?? '',
+                            ],
                           ),
                         )
                         .toList(),
@@ -157,17 +160,20 @@ class _ConsumableDispositionDialogState
                     ],
                   ),
                   const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: _locationCode,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Scrap Storage Location',
-                    ),
-                    items: _locations
+                  SearchableSelectField<String>(
+                    value: _locationCode,
+                    labelText: 'Scrap Storage Location',
+                    allowClear: true,
+                    searchHint: 'Search storage location',
+                    options: _locations
                         .map(
-                          (item) => DropdownMenuItem(
+                          (item) => SearchableSelectOption(
                             value: item['code'].toString(),
-                            child: Text('${item['code']} — ${item['name']}'),
+                            label: '${item['code']} — ${item['name']}',
+                            searchTerms: [
+                              item['code'].toString(),
+                              item['name']?.toString() ?? '',
+                            ],
                           ),
                         )
                         .toList(),

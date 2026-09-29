@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
+import '../../shared/searchable_select_field.dart';
 import '../../shared/units.dart';
 
 class ProductBomDialog extends StatefulWidget {
@@ -273,21 +274,24 @@ class _ProductBomDialogState extends State<ProductBomDialog> {
       children: [
         Expanded(
           flex: 3,
-          child: DropdownButtonFormField<String>(
-            initialValue:
+          child: SearchableSelectField<String>(
+            value:
                 _products.any((product) => product['code'] == line.productCode)
                 ? line.productCode
                 : null,
-            decoration: const InputDecoration(labelText: 'Material Product'),
-            isExpanded: true,
-            items: _products
+            labelText: 'Material Product',
+            searchHint: 'Search material product',
+            options: _products
                 .map(
-                  (product) => DropdownMenuItem(
+                  (product) => SearchableSelectOption(
                     value: product['code'].toString(),
-                    child: Text(
-                      '${product['code']} — ${product['description']}',
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    label: '${product['code']} — ${product['description']}',
+                    searchTerms: [
+                      product['code'].toString(),
+                      product['description']?.toString() ?? '',
+                      product['part_name']?.toString() ?? '',
+                      product['part_no']?.toString() ?? '',
+                    ],
                   ),
                 )
                 .toList(),

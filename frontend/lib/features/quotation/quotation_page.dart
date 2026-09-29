@@ -5,6 +5,7 @@ import '../../core/api_client.dart';
 import '../../shared/app_module_scaffold.dart';
 import '../../shared/app_sidebar.dart' show AppModule;
 import '../../shared/modal_widgets.dart';
+import '../../shared/searchable_select_field.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
 
@@ -162,20 +163,20 @@ class _QuotationPageState extends State<QuotationPage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    DropdownButtonFormField<String>(
-                      initialValue: customerCode,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Customer *',
-                      ),
-                      items: _customers
+                    SearchableSelectField<String>(
+                      value: customerCode,
+                      labelText: 'Customer *',
+                      searchHint: 'Search customer',
+                      options: _customers
                           .map(
-                            (customer) => DropdownMenuItem(
+                            (customer) => SearchableSelectOption(
                               value: customer['code'].toString(),
-                              child: Text(
-                                '${customer['code']} - ${customer['name']}',
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                              label:
+                                  '${customer['code']} - ${customer['name']}',
+                              searchTerms: [
+                                customer['code'].toString(),
+                                customer['name']?.toString() ?? '',
+                              ],
                             ),
                           )
                           .toList(),
@@ -401,18 +402,22 @@ class _QuotationPageState extends State<QuotationPage> {
                 ),
             ],
           ),
-          DropdownButtonFormField<String>(
-            initialValue: line.productCode,
-            isExpanded: true,
-            decoration: const InputDecoration(labelText: 'Product *'),
-            items: _products
+          SearchableSelectField<String>(
+            value: line.productCode,
+            labelText: 'Product *',
+            searchHint: 'Search product',
+            options: _products
                 .map(
-                  (product) => DropdownMenuItem(
+                  (product) => SearchableSelectOption(
                     value: product['code'].toString(),
-                    child: Text(
-                      '${product['part_name']} - ${product['description']}',
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    label:
+                        '${product['part_name']} - ${product['description']}',
+                    searchTerms: [
+                      product['code'].toString(),
+                      product['part_name']?.toString() ?? '',
+                      product['part_no']?.toString() ?? '',
+                      product['description']?.toString() ?? '',
+                    ],
                   ),
                 )
                 .toList(),

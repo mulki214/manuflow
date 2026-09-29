@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
 import '../../shared/mobile_product_scanner.dart';
+import '../../shared/searchable_select_field.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
 
@@ -400,16 +401,20 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
                 ),
               ),
               _box(
-                DropdownButtonFormField<String>(
-                  initialValue: _supplierCode,
-                  decoration: const InputDecoration(labelText: 'Supplier *'),
-                  isExpanded: true,
-                  items: _corporations
+                SearchableSelectField<String>(
+                  value: _supplierCode,
+                  labelText: 'Supplier *',
+                  searchHint: 'Search supplier',
+                  options: _corporations
                       .where((item) => item['is_supplier'] == true)
                       .map(
-                        (item) => DropdownMenuItem(
+                        (item) => SearchableSelectOption(
                           value: item['code'].toString(),
-                          child: Text('${item['code']} — ${item['name']}'),
+                          label: '${item['code']} — ${item['name']}',
+                          searchTerms: [
+                            item['code'].toString(),
+                            item['name']?.toString() ?? '',
+                          ],
                         ),
                       )
                       .toList(),
@@ -424,16 +429,20 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
               ),
               if (_documentType == 'sales_order') ...[
                 _box(
-                  DropdownButtonFormField<String>(
-                    initialValue: _customerCode,
-                    decoration: const InputDecoration(labelText: 'Customer *'),
-                    isExpanded: true,
-                    items: _corporations
+                  SearchableSelectField<String>(
+                    value: _customerCode,
+                    labelText: 'Customer *',
+                    searchHint: 'Search customer',
+                    options: _corporations
                         .where((item) => item['is_customer'] == true)
                         .map(
-                          (item) => DropdownMenuItem(
+                          (item) => SearchableSelectOption(
                             value: item['code'].toString(),
-                            child: Text('${item['code']} — ${item['name']}'),
+                            label: '${item['code']} — ${item['name']}',
+                            searchTerms: [
+                              item['code'].toString(),
+                              item['name']?.toString() ?? '',
+                            ],
                           ),
                         )
                         .toList(),
@@ -471,22 +480,23 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
                 ),
               SizedBox(
                 width: 584,
-                child: DropdownButtonFormField<int>(
-                  initialValue: _sourceItemId,
-                  decoration: InputDecoration(
-                    labelText: _documentType == 'sales_order'
-                        ? 'Outstanding SO Receiving Item *'
-                        : 'Outstanding PO Item *',
-                  ),
-                  isExpanded: true,
-                  items: _visibleSourceItems
+                child: SearchableSelectField<int>(
+                  value: _sourceItemId,
+                  labelText: _documentType == 'sales_order'
+                      ? 'Outstanding SO Receiving Item *'
+                      : 'Outstanding PO Item *',
+                  searchHint: 'Search order or product',
+                  options: _visibleSourceItems
                       .map(
-                        (item) => DropdownMenuItem(
+                        (item) => SearchableSelectOption(
                           value: item['item_id'] as int,
-                          child: Text(
-                            '${item['document_number']} — ${item['product_description']} — ${formatQuantity(item['outstanding_quantity'], item['unit'].toString())} ${unitLabel(item['unit'].toString())}',
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                          label:
+                              '${item['document_number']} — ${item['product_description']} — ${formatQuantity(item['outstanding_quantity'], item['unit'].toString())} ${unitLabel(item['unit'].toString())}',
+                          searchTerms: [
+                            item['document_number']?.toString() ?? '',
+                            item['product_code']?.toString() ?? '',
+                            item['product_description']?.toString() ?? '',
+                          ],
                         ),
                       )
                       .toList(),
@@ -520,13 +530,19 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
                 ),
               ),
               _box(
-                DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(labelText: 'Plant *'),
-                  items: _plants
+                SearchableSelectField<String>(
+                  value: _plantCode,
+                  labelText: 'Plant *',
+                  searchHint: 'Search plant',
+                  options: _plants
                       .map(
-                        (item) => DropdownMenuItem(
+                        (item) => SearchableSelectOption(
                           value: item['code'].toString(),
-                          child: Text(item['name'].toString()),
+                          label: '${item['code']} — ${item['name']}',
+                          searchTerms: [
+                            item['code'].toString(),
+                            item['name']?.toString() ?? '',
+                          ],
                         ),
                       )
                       .toList(),
@@ -535,17 +551,21 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
                 ),
               ),
               _box(
-                DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(
-                    labelText: 'Storage Location *',
-                  ),
-                  items: _locations
+                SearchableSelectField<String>(
+                  value: _locationCode,
+                  labelText: 'Storage Location *',
+                  searchHint: 'Search storage location',
+                  options: _locations
                       .map(
-                        (item) => DropdownMenuItem(
+                        (item) => SearchableSelectOption(
                           value: item['code'].toString(),
-                          child: Text(
-                            '${item['storage_name'] ?? 'Storage'} — ${item['name']}',
-                          ),
+                          label:
+                              '${item['storage_name'] ?? 'Storage'} — ${item['name']}',
+                          searchTerms: [
+                            item['code'].toString(),
+                            item['storage_name']?.toString() ?? '',
+                            item['name']?.toString() ?? '',
+                          ],
                         ),
                       )
                       .toList(),
@@ -589,17 +609,20 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
               ),
               if (_transportSource == 'internal')
                 _box(
-                  DropdownButtonFormField<String>(
-                    initialValue: _transportationCode,
-                    decoration: const InputDecoration(
-                      labelText: 'Internal Vehicle *',
-                    ),
-                    isExpanded: true,
-                    items: _transportations
+                  SearchableSelectField<String>(
+                    value: _transportationCode,
+                    labelText: 'Internal Vehicle *',
+                    searchHint: 'Search vehicle',
+                    options: _transportations
                         .map(
-                          (item) => DropdownMenuItem(
+                          (item) => SearchableSelectOption(
                             value: item['code'].toString(),
-                            child: Text(item['vehicle_number'].toString()),
+                            label: item['vehicle_number'].toString(),
+                            searchTerms: [
+                              item['code'].toString(),
+                              item['vehicle_number']?.toString() ?? '',
+                              item['carrier_name']?.toString() ?? '',
+                            ],
                           ),
                         )
                         .toList(),

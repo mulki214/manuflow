@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
+import '../../shared/searchable_select_field.dart';
 import 'master_data_models.dart';
 
 class MasterDataFormDialog extends StatefulWidget {
@@ -439,36 +440,22 @@ class _MasterDataFormDialogState extends State<MasterDataFormDialog> {
             }
           }),
         ),
-        DropdownButtonFormField<String>(
-          initialValue: _customers.any((item) => item.code == _customerCode)
+        SearchableSelectField<String>(
+          value: _customers.any((item) => item.code == _customerCode)
               ? _customerCode
               : null,
-          decoration: const InputDecoration(labelText: 'Customer Code'),
-          items: _customers
-              .map(
-                (item) => DropdownMenuItem(
-                  value: item.code,
-                  child: Text(item.label, overflow: TextOverflow.ellipsis),
-                ),
-              )
-              .toList(),
+          labelText: 'Customer Code',
+          options: _customers.map(_lookupOption).toList(),
           onChanged: (value) => setState(() => _customerCode = value),
           validator: (value) => value == null ? 'Required' : null,
         ),
         if (_productSupplySource == 'external_supplier')
-          DropdownButtonFormField<String>(
-            initialValue: _suppliers.any((item) => item.code == _supplierCode)
+          SearchableSelectField<String>(
+            value: _suppliers.any((item) => item.code == _supplierCode)
                 ? _supplierCode
                 : null,
-            decoration: const InputDecoration(labelText: 'Supplier Code *'),
-            items: _suppliers
-                .map(
-                  (item) => DropdownMenuItem(
-                    value: item.code,
-                    child: Text(item.label, overflow: TextOverflow.ellipsis),
-                  ),
-                )
-                .toList(),
+            labelText: 'Supplier Code *',
+            options: _suppliers.map(_lookupOption).toList(),
             onChanged: (value) => setState(() => _supplierCode = value),
             validator: (value) => value == null ? 'Required' : null,
           ),
@@ -494,19 +481,12 @@ class _MasterDataFormDialogState extends State<MasterDataFormDialog> {
         input('machine_type', 'Machine Type'),
         input('year', 'Machine Year', integer: true),
         input('country_of_origin', 'Country of Origin'),
-        DropdownButtonFormField<String>(
-          initialValue: _plants.any((item) => item.code == _plantCode)
+        SearchableSelectField<String>(
+          value: _plants.any((item) => item.code == _plantCode)
               ? _plantCode
               : null,
-          decoration: const InputDecoration(labelText: 'Plant Location'),
-          items: _plants
-              .map(
-                (item) => DropdownMenuItem(
-                  value: item.code,
-                  child: Text(item.label, overflow: TextOverflow.ellipsis),
-                ),
-              )
-              .toList(),
+          labelText: 'Plant Location',
+          options: _plants.map(_lookupOption).toList(),
           onChanged: (value) => setState(() => _plantCode = value),
           validator: (value) => value == null ? 'Required' : null,
         ),
@@ -582,19 +562,12 @@ class _MasterDataFormDialogState extends State<MasterDataFormDialog> {
       ],
       MasterDataType.storageLocation => <Widget>[
         input('name', 'Storage Location Name'),
-        DropdownButtonFormField<String>(
-          initialValue: _plants.any((item) => item.code == _plantCode)
+        SearchableSelectField<String>(
+          value: _plants.any((item) => item.code == _plantCode)
               ? _plantCode
               : null,
-          decoration: const InputDecoration(labelText: 'Plant'),
-          items: _plants
-              .map(
-                (item) => DropdownMenuItem(
-                  value: item.code,
-                  child: Text(item.label, overflow: TextOverflow.ellipsis),
-                ),
-              )
-              .toList(),
+          labelText: 'Plant',
+          options: _plants.map(_lookupOption).toList(),
           onChanged: (value) => setState(() => _plantCode = value),
           validator: (value) => value == null ? 'Required' : null,
         ),
@@ -704,19 +677,19 @@ class _MasterDataFormDialogState extends State<MasterDataFormDialog> {
     required String? value,
     required ValueChanged<String?> onChanged,
   }) {
-    return DropdownButtonFormField<String>(
-      initialValue: options.any((item) => item.code == value) ? value : null,
-      decoration: InputDecoration(labelText: label),
-      items: options
-          .map(
-            (item) => DropdownMenuItem(
-              value: item.code,
-              child: Text(item.label, overflow: TextOverflow.ellipsis),
-            ),
-          )
-          .toList(),
+    return SearchableSelectField<String>(
+      value: options.any((item) => item.code == value) ? value : null,
+      labelText: label,
+      options: options.map(_lookupOption).toList(),
       onChanged: onChanged,
       validator: (selected) => selected == null ? 'Required' : null,
     );
   }
+
+  SearchableSelectOption<String> _lookupOption(LookupOption item) =>
+      SearchableSelectOption(
+        value: item.code,
+        label: item.label,
+        searchTerms: [item.code, item.name],
+      );
 }

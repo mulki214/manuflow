@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
 import '../../shared/units.dart';
+import '../../shared/searchable_select_field.dart';
 import 'production_models.dart';
 
 class WipExecutionFormDialog extends StatefulWidget {
@@ -525,18 +526,14 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
                       ],
                     ),
                     const SizedBox(height: 14),
-                    DropdownButtonFormField<String>(
-                      initialValue: _nextProcess,
-                      decoration: const InputDecoration(
-                        labelText: 'After Process for Good Output',
-                      ),
-                      isExpanded: true,
-                      items: [
-                        const DropdownMenuItem(
+                    SearchableSelectField<String?>(
+                      value: _nextProcess,
+                      labelText: 'After Process for Good Output',
+                      searchHint: 'Search process',
+                      options: [
+                        const SearchableSelectOption(
                           value: null,
-                          child: Text(
-                            'Quality Queue (final Production process)',
-                          ),
+                          label: 'Quality Queue (final Production process)',
                         ),
                         ..._processes
                             .where(
@@ -545,9 +542,10 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
                                   item.code != widget.job.processCode,
                             )
                             .map(
-                              (item) => DropdownMenuItem(
+                              (item) => SearchableSelectOption(
                                 value: item.code,
-                                child: Text('${item.code} — ${item.name}'),
+                                label: '${item.code} — ${item.name}',
+                                searchTerms: [item.code, item.name],
                               ),
                             ),
                       ],
@@ -555,23 +553,24 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
                           setState(() => _nextProcess = value),
                     ),
                     const SizedBox(height: 14),
-                    DropdownButtonFormField<String>(
-                      initialValue: _repairRoute,
-                      decoration: const InputDecoration(
-                        labelText: 'Repair Route',
-                      ),
-                      isExpanded: true,
-                      items: [
-                        const DropdownMenuItem(
+                    SearchableSelectField<String?>(
+                      value: _repairRoute,
+                      labelText: 'Repair Route',
+                      searchHint: 'Search repair route',
+                      options: [
+                        const SearchableSelectOption(
                           value: null,
-                          child: Text('Use a single Repair Process'),
+                          label: 'Use a single Repair Process',
                         ),
                         ..._repairRoutes.map(
-                          (item) => DropdownMenuItem(
+                          (item) => SearchableSelectOption(
                             value: item['code'].toString(),
-                            child: Text(
-                              '${item['code']} — ${item['name']} (${(item['step_process_codes'] as List).join(' → ')})',
-                            ),
+                            label:
+                                '${item['code']} — ${item['name']} (${(item['step_process_codes'] as List).join(' → ')})',
+                            searchTerms: [
+                              item['code'].toString(),
+                              item['name']?.toString() ?? '',
+                            ],
                           ),
                         ),
                       ],
@@ -581,23 +580,22 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
                       }),
                     ),
                     const SizedBox(height: 14),
-                    DropdownButtonFormField<String>(
-                      initialValue: _repairProcess,
-                      decoration: const InputDecoration(
-                        labelText: 'Repair Process',
-                      ),
-                      isExpanded: true,
-                      items: [
-                        const DropdownMenuItem(
+                    SearchableSelectField<String?>(
+                      value: _repairProcess,
+                      labelText: 'Repair Process',
+                      searchHint: 'Search repair process',
+                      options: [
+                        const SearchableSelectOption(
                           value: null,
-                          child: Text('Select when Repair Quantity is entered'),
+                          label: 'Select when Repair Quantity is entered',
                         ),
                         ..._processes
                             .where((item) => item.type == 'repair')
                             .map(
-                              (item) => DropdownMenuItem(
+                              (item) => SearchableSelectOption(
                                 value: item.code,
-                                child: Text('${item.code} — ${item.name}'),
+                                label: '${item.code} — ${item.name}',
+                                searchTerms: [item.code, item.name],
                               ),
                             ),
                       ],
@@ -606,19 +604,24 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
                           : (value) => setState(() => _repairProcess = value),
                     ),
                     const SizedBox(height: 14),
-                    DropdownButtonFormField<String>(
-                      initialValue: _machine,
-                      decoration: const InputDecoration(labelText: 'Machine'),
-                      isExpanded: true,
-                      items: [
-                        const DropdownMenuItem(
+                    SearchableSelectField<String?>(
+                      value: _machine,
+                      labelText: 'Machine',
+                      allowClear: true,
+                      searchHint: 'Search machine',
+                      options: [
+                        const SearchableSelectOption(
                           value: null,
-                          child: Text('No Machine / Manual Process'),
+                          label: 'No Machine / Manual Process',
                         ),
                         ..._machines.map(
-                          (item) => DropdownMenuItem(
+                          (item) => SearchableSelectOption(
                             value: item['code'].toString(),
-                            child: Text('${item['code']} — ${item['name']}'),
+                            label: '${item['code']} — ${item['name']}',
+                            searchTerms: [
+                              item['code'].toString(),
+                              item['name']?.toString() ?? '',
+                            ],
                           ),
                         ),
                       ],
@@ -632,19 +635,22 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
                       ),
                       const SizedBox(height: 14),
                     ] else ...[
-                      DropdownButtonFormField<String>(
-                        initialValue: _outputProduct,
-                        decoration: const InputDecoration(
-                          labelText: 'Good Output Product',
-                        ),
-                        isExpanded: true,
-                        items: _products
+                      SearchableSelectField<String>(
+                        value: _outputProduct,
+                        labelText: 'Good Output Product',
+                        searchHint: 'Search output product',
+                        options: _products
                             .map(
-                              (item) => DropdownMenuItem(
+                              (item) => SearchableSelectOption(
                                 value: item['code'].toString(),
-                                child: Text(
-                                  '${item['code']} — ${item['description']}',
-                                ),
+                                label:
+                                    '${item['code']} — ${item['description']}',
+                                searchTerms: [
+                                  item['code'].toString(),
+                                  item['description']?.toString() ?? '',
+                                  item['part_name']?.toString() ?? '',
+                                  item['part_no']?.toString() ?? '',
+                                ],
                               ),
                             )
                             .toList(),

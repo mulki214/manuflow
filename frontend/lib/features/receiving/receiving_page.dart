@@ -6,6 +6,7 @@ import '../../shared/crud_widgets.dart';
 import '../../shared/mobile_product_scanner.dart';
 import '../../shared/modal_widgets.dart';
 import '../../shared/module_navigation.dart';
+import '../../shared/searchable_select_field.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
 import '../master_data/master_data_page.dart';
@@ -415,21 +416,26 @@ class _ReceivingPageState extends State<ReceivingPage> {
                   ),
                   SizedBox(
                     width: desktop ? 230 : double.infinity,
-                    child: DropdownButtonFormField<String?>(
-                      decoration: const InputDecoration(labelText: 'Product'),
-                      initialValue: _productCode,
-                      items: [
-                        const DropdownMenuItem(
+                    child: SearchableSelectField<String?>(
+                      value: _productCode,
+                      labelText: 'Product',
+                      allowClear: true,
+                      searchHint: 'Search product',
+                      options: [
+                        const SearchableSelectOption(
                           value: null,
-                          child: Text('All Products'),
+                          label: 'All Products',
                         ),
                         ..._products.map(
-                          (item) => DropdownMenuItem(
+                          (item) => SearchableSelectOption(
                             value: item['code'].toString(),
-                            child: Text(
-                              item['part_name'].toString(),
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                            label: item['part_name'].toString(),
+                            searchTerms: [
+                              item['code'].toString(),
+                              item['part_name']?.toString() ?? '',
+                              item['description']?.toString() ?? '',
+                              item['part_no']?.toString() ?? '',
+                            ],
                           ),
                         ),
                       ],

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
+import '../../shared/searchable_select_field.dart';
 import '../../shared/units.dart';
 import 'purchase_order_models.dart';
 
@@ -327,18 +328,19 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
                   _dateField('PO Date', _poDate, (value) => _poDate = value),
                 ),
                 _fieldBox(
-                  DropdownButtonFormField<String>(
-                    initialValue: _supplierCode,
-                    decoration: const InputDecoration(labelText: 'Supplier *'),
-                    isExpanded: true,
-                    items: _suppliers
+                  SearchableSelectField<String>(
+                    value: _supplierCode,
+                    labelText: 'Supplier *',
+                    searchHint: 'Search supplier',
+                    options: _suppliers
                         .map(
-                          (supplier) => DropdownMenuItem(
+                          (supplier) => SearchableSelectOption(
                             value: supplier['code'].toString(),
-                            child: Text(
-                              '${supplier['code']} — ${supplier['name']}',
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                            label: '${supplier['code']} — ${supplier['name']}',
+                            searchTerms: [
+                              supplier['code'].toString(),
+                              supplier['name']?.toString() ?? '',
+                            ],
                           ),
                         )
                         .toList(),
@@ -377,18 +379,19 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
                   ),
                 ),
                 _fieldBox(
-                  DropdownButtonFormField<String>(
-                    initialValue: _plantCode,
-                    decoration: const InputDecoration(labelText: 'Plant *'),
-                    isExpanded: true,
-                    items: _plants
+                  SearchableSelectField<String>(
+                    value: _plantCode,
+                    labelText: 'Plant *',
+                    searchHint: 'Search plant',
+                    options: _plants
                         .map(
-                          (plant) => DropdownMenuItem(
+                          (plant) => SearchableSelectOption(
                             value: plant['code'].toString(),
-                            child: Text(
-                              '${plant['code']} — ${plant['name']}',
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                            label: '${plant['code']} — ${plant['name']}',
+                            searchTerms: [
+                              plant['code'].toString(),
+                              plant['name']?.toString() ?? '',
+                            ],
                           ),
                         )
                         .toList(),
@@ -543,18 +546,22 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
               children: [
                 SizedBox(
                   width: 310,
-                  child: DropdownButtonFormField<String>(
-                    initialValue: item.productCode,
-                    decoration: const InputDecoration(labelText: 'Product *'),
-                    isExpanded: true,
-                    items: _products
+                  child: SearchableSelectField<String>(
+                    value: item.productCode,
+                    labelText: 'Product *',
+                    searchHint: 'Search product',
+                    options: _products
                         .map(
-                          (product) => DropdownMenuItem(
+                          (product) => SearchableSelectOption(
                             value: product['code'].toString(),
-                            child: Text(
-                              '${product['code']} — ${product['description']}',
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                            label:
+                                '${product['code']} — ${product['description']}',
+                            searchTerms: [
+                              product['code'].toString(),
+                              product['description']?.toString() ?? '',
+                              product['part_name']?.toString() ?? '',
+                              product['part_no']?.toString() ?? '',
+                            ],
                           ),
                         )
                         .toList(),

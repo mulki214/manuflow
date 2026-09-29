@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
 import '../../shared/mobile_product_scanner.dart';
+import '../../shared/searchable_select_field.dart';
 import '../../shared/units.dart';
 import '../production/production_models.dart';
 import 'warehouse_models.dart';
@@ -204,19 +205,23 @@ class _WarehouseTransferFormDialogState
                       ),
                       const SizedBox(height: 14),
                     ],
-                    DropdownButtonFormField<int>(
-                      decoration: const InputDecoration(
-                        labelText: 'Product / Lot / Source Location *',
-                      ),
-                      isExpanded: true,
-                      items: _selectableLots
+                    SearchableSelectField<int>(
+                      value: _lot?.id,
+                      labelText: 'Product / Lot / Source Location *',
+                      searchHint: 'Search product, lot, or location',
+                      options: _selectableLots
                           .map(
-                            (lot) => DropdownMenuItem(
+                            (lot) => SearchableSelectOption(
                               value: lot.id,
-                              child: Text(
-                                '${lot.productCode} — ${lot.description} — Lot ${lot.lotNumber} — ${_number(lot.quantity)} ${unitLabel(lot.unit)}',
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                              label:
+                                  '${lot.productCode} — ${lot.description} — Lot ${lot.lotNumber} — ${_number(lot.quantity)} ${unitLabel(lot.unit)}',
+                              searchTerms: [
+                                lot.productCode,
+                                lot.description,
+                                lot.lotNumber,
+                                lot.storageName,
+                                lot.locationName,
+                              ],
                             ),
                           )
                           .toList(),
@@ -300,22 +305,21 @@ class _WarehouseTransferFormDialogState
                     ),
                     const SizedBox(height: 14),
                     if (_destinationType == 'wip')
-                      DropdownButtonFormField<String>(
-                        initialValue: _processCode,
-                        decoration: const InputDecoration(
-                          labelText: 'After Process *',
-                        ),
-                        isExpanded: true,
-                        items: _processes
+                      SearchableSelectField<String>(
+                        value: _processCode,
+                        labelText: 'After Process *',
+                        searchHint: 'Search process',
+                        options: _processes
                             .where(
                               (item) =>
                                   _lot == null ||
                                   item.plantCode == _lot!.plantCode,
                             )
                             .map(
-                              (item) => DropdownMenuItem(
+                              (item) => SearchableSelectOption(
                                 value: item.code,
-                                child: Text('${item.code} — ${item.name}'),
+                                label: '${item.code} — ${item.name}',
+                                searchTerms: [item.code, item.name],
                               ),
                             )
                             .toList(),
@@ -325,24 +329,26 @@ class _WarehouseTransferFormDialogState
                             value == null ? 'WIP Process is required' : null,
                       )
                     else
-                      DropdownButtonFormField<String>(
-                        initialValue: _locationCode,
-                        decoration: const InputDecoration(
-                          labelText: 'Finished Goods Location *',
-                        ),
-                        isExpanded: true,
-                        items: _finishedLocations
+                      SearchableSelectField<String>(
+                        value: _locationCode,
+                        labelText: 'Finished Goods Location *',
+                        searchHint: 'Search finished goods location',
+                        options: _finishedLocations
                             .where(
                               (item) =>
                                   _lot == null ||
                                   item['plant_code'] == _lot!.plantCode,
                             )
                             .map(
-                              (item) => DropdownMenuItem(
+                              (item) => SearchableSelectOption(
                                 value: item['code'].toString(),
-                                child: Text(
-                                  '${item['storage_name']} — ${item['name']}',
-                                ),
+                                label:
+                                    '${item['storage_name']} — ${item['name']}',
+                                searchTerms: [
+                                  item['code'].toString(),
+                                  item['storage_name']?.toString() ?? '',
+                                  item['name']?.toString() ?? '',
+                                ],
                               ),
                             )
                             .toList(),
