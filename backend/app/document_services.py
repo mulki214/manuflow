@@ -216,40 +216,30 @@ def purchase_order_pdf_bytes(order: Any) -> bytes:
         return Image(image_stream, width=25 * mm, height=25 * mm)
 
     signature_rows = [
-        [Paragraph("<b>Created By</b>", center), Paragraph("<b>Approved By</b>", center)],
-        [qr_image(order.creator_qr_payload), qr_image(order.approval_qr_payload)],
-        [Paragraph(order.created_by_name, center), Paragraph(order.reviewed_by_name or "-", center)],
+        [
+            Paragraph("<b>Supplier</b>", center),
+            Paragraph("<b>Created By</b>", center),
+            Paragraph("<b>Approved By</b>", center),
+        ],
+        ["", qr_image(order.creator_qr_payload), qr_image(order.approval_qr_payload)],
+        [
+            Paragraph("Signature & Company Stamp", center),
+            Paragraph(order.created_by_name, center),
+            Paragraph(order.reviewed_by_name or "-", center),
+        ],
     ]
     story.append(
         Table(
             signature_rows,
-            colWidths=[65 * mm, 65 * mm],
+            colWidths=[60 * mm, 60 * mm, 60 * mm],
+            rowHeights=[6 * mm, 30 * mm, 6 * mm],
             hAlign="CENTER",
-            style=[("ALIGN", (0, 0), (-1, -1), "CENTER"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE")],
+            style=[
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LINEABOVE", (0, 2), (0, 2), 0.7, colors.black),
+            ],
         )
-    )
-    # A PO is countersigned manually by the Supplier. Keep a dedicated blank
-    # signature area below the system QR approvals instead of implying that
-    # the Supplier has approved through an ERP account.
-    story.extend(
-        [
-            Spacer(1, 9 * mm),
-            Table(
-                [
-                    [Paragraph("<b>Supplier</b>", center)],
-                    [""],
-                    [Paragraph("Signature & Company Stamp", center)],
-                ],
-                colWidths=[65 * mm],
-                rowHeights=[6 * mm, 30 * mm, 6 * mm],
-                hAlign="RIGHT",
-                style=[
-                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("LINEABOVE", (0, 2), (-1, 2), 0.7, colors.black),
-                ],
-            ),
-        ]
     )
     document.build(story)
     return stream.getvalue()
