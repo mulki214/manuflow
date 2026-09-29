@@ -228,6 +228,29 @@ def purchase_order_pdf_bytes(order: Any) -> bytes:
             style=[("ALIGN", (0, 0), (-1, -1), "CENTER"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE")],
         )
     )
+    # A PO is countersigned manually by the Supplier. Keep a dedicated blank
+    # signature area below the system QR approvals instead of implying that
+    # the Supplier has approved through an ERP account.
+    story.extend(
+        [
+            Spacer(1, 9 * mm),
+            Table(
+                [
+                    [Paragraph("<b>Supplier</b>", center)],
+                    [""],
+                    [Paragraph("Signature & Company Stamp", center)],
+                ],
+                colWidths=[65 * mm],
+                rowHeights=[6 * mm, 30 * mm, 6 * mm],
+                hAlign="RIGHT",
+                style=[
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("LINEABOVE", (0, 2), (-1, 2), 0.7, colors.black),
+                ],
+            ),
+        ]
+    )
     document.build(story)
     return stream.getvalue()
 
