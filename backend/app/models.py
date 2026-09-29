@@ -352,6 +352,9 @@ class Product(Base):
     gross_weight: Mapped[Decimal] = mapped_column(Numeric(14, 3), nullable=False)
     nett_weight: Mapped[Decimal] = mapped_column(Numeric(14, 3), nullable=False)
     default_cycle_time_seconds: Mapped[Decimal | None] = mapped_column(Numeric(14, 3), nullable=True)
+    productivity_percentage: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=Decimal("95")
+    )
     current_stock_grams: Mapped[Decimal] = mapped_column(Numeric(20, 3), nullable=False, default=0)
     category: Mapped[ProductCategory] = mapped_column(
         Enum(ProductCategory, name="product_category_enum"),
@@ -1025,6 +1028,8 @@ class ProductionExecution(Base):
     observed_cycle_time_seconds: Mapped[Decimal | None] = mapped_column(Numeric(14, 3), nullable=True)
     target_cycle_time_seconds: Mapped[Decimal | None] = mapped_column(Numeric(14, 3), nullable=True)
     target_finish_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    target_productivity_percentage: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    target_outcome_quantity: Mapped[Decimal | None] = mapped_column(Numeric(20, 3), nullable=True)
     job_id: Mapped[int] = mapped_column(ForeignKey("wip_lot_jobs.id", ondelete="RESTRICT"), nullable=False, index=True)
     product_code: Mapped[str] = mapped_column(ForeignKey("products.code", ondelete="RESTRICT"), nullable=False)
     product_name: Mapped[str] = mapped_column(String(200), nullable=False)

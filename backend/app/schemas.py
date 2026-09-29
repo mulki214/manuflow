@@ -220,6 +220,7 @@ class ProductBase(BaseModel):
     gross_weight: Decimal = Field(ge=0, decimal_places=3)
     nett_weight: Decimal = Field(ge=0, decimal_places=3)
     default_cycle_time_seconds: Decimal | None = Field(default=None, gt=0, decimal_places=3)
+    productivity_percentage: Decimal = Field(default=Decimal("95"), gt=0, le=100, decimal_places=2)
     category: ProductCategory = ProductCategory.finished_good
 
     @model_validator(mode="after")
@@ -247,6 +248,7 @@ class ProductUpdate(BaseModel):
     gross_weight: Decimal | None = Field(default=None, ge=0, decimal_places=3)
     nett_weight: Decimal | None = Field(default=None, ge=0, decimal_places=3)
     default_cycle_time_seconds: Decimal | None = Field(default=None, gt=0, decimal_places=3)
+    productivity_percentage: Decimal | None = Field(default=None, gt=0, le=100, decimal_places=2)
     category: ProductCategory | None = None
 
 
@@ -1247,6 +1249,9 @@ class ProductionExecutionResponse(BaseModel):
     observed_cycle_time_seconds: Decimal | None
     target_cycle_time_seconds: Decimal | None
     target_finish_at: datetime | None
+    target_productivity_percentage: Decimal | None
+    target_outcome_quantity: Decimal | None
+    outcome_achievement_percentage: Decimal | None
     on_target: bool | None
     job_id: int
     product_code: str

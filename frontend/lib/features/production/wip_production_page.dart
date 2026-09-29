@@ -961,6 +961,19 @@ class _WipProductionPageState extends State<WipProductionPage> {
                       : '${_number(item.observedCycleTimeSeconds!)} seconds',
                 ),
                 _detail(
+                  'Target Outcome',
+                  item.targetOutcomeQuantity == null
+                      ? '-'
+                      : '${formatQuantity(item.targetOutcomeQuantity!, item.outputUnit)} ${unitLabel(item.outputUnit)}'
+                            '${item.targetProductivityPercentage == null ? '' : ' (${_number(item.targetProductivityPercentage!)}%)'}',
+                ),
+                _detail(
+                  'Outcome Achievement',
+                  item.outcomeAchievementPercentage == null
+                      ? '-'
+                      : '${_number(item.outcomeAchievementPercentage!)}%',
+                ),
+                _detail(
                   'NG Control',
                   item.ngLimitExceeded
                       ? 'Head override: ${item.ngOverrideReason ?? '-'}'

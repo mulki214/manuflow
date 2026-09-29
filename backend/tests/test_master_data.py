@@ -63,6 +63,7 @@ def test_product_accepts_optional_default_cycle_time() -> None:
         default_cycle_time_seconds=Decimal("45.5"),
     )
     assert product.default_cycle_time_seconds == Decimal("45.5")
+    assert product.productivity_percentage == Decimal("95")
 
     with pytest.raises(ValidationError):
         ProductCreate(

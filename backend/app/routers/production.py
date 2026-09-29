@@ -35,7 +35,12 @@ from app.models import (
     WipProcessType,
 )
 from app.module_permissions import DepartmentModuleAccess, resolve_department_membership
-from app.operational_services import actual_cycle_time_seconds, ng_limit_exceeded, require_whole_quantity
+from app.operational_services import (
+    actual_cycle_time_seconds,
+    ng_limit_exceeded,
+    require_whole_quantity,
+    target_outcome_quantity,
+)
 from app.production_services import (
     child_segment_code,
     ensure_production_execution_reversible,
@@ -314,6 +319,12 @@ async def execution_response(db: AsyncSession, record: ProductionExecution) -> P
         (job.lot_segment_code for job in children if job.process_code == record.repair_process_code), None
     )
     ng_segment = next((job.lot_segment_code for job in children if job.status == WipLotStatus.ng), None)
+    target_outcome = getattr(record, "target_outcome_quantity", None)
+    achievement = (
+        (record.good_quantity / target_outcome * Decimal("100")).quantize(Decimal("0.01"))
+        if target_outcome and target_outcome > 0
+        else None
+    )
     return ProductionExecutionResponse(
         id=record.id,
         production_number=record.production_number,
@@ -326,6 +337,9 @@ async def execution_response(db: AsyncSession, record: ProductionExecution) -> P
         observed_cycle_time_seconds=record.observed_cycle_time_seconds,
         target_cycle_time_seconds=getattr(record, "target_cycle_time_seconds", None),
         target_finish_at=getattr(record, "target_finish_at", None),
+        target_productivity_percentage=getattr(record, "target_productivity_percentage", None),
+        target_outcome_quantity=target_outcome,
+        outcome_achievement_percentage=achievement,
         on_target=(record.ended_at <= record.target_finish_at if getattr(record, "target_finish_at", None) and record.ended_at else None),
         job_id=record.job_id,
         product_code=record.product_code,
@@ -728,6 +742,14 @@ async def complete_wip_job(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     target_cycle_time = output_product.default_cycle_time_seconds
+    target_productivity = output_product.productivity_percentage
+    target_outcome = target_outcome_quantity(
+        data.started_at,
+        data.ended_at,
+        data.break_duration_minutes,
+        target_cycle_time,
+        target_productivity,
+    )
     target_finish_at = None
     if data.started_at and target_cycle_time is not None:
         target_seconds = int((target_cycle_time * good).to_integral_value()) + data.break_duration_minutes * 60
@@ -744,6 +766,8 @@ async def complete_wip_job(
         observed_cycle_time_seconds=data.observed_cycle_time_seconds,
         target_cycle_time_seconds=target_cycle_time,
         target_finish_at=target_finish_at,
+        target_productivity_percentage=target_productivity,
+        target_outcome_quantity=target_outcome,
         job_id=job.id,
         product_code=job.product_code,
         product_name=product.part_name,

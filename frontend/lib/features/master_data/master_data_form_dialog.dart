@@ -78,6 +78,9 @@ class _MasterDataFormDialogState extends State<MasterDataFormDialog> {
         data['supply_source']?.toString() ?? 'external_supplier';
     _transportationActive = data['is_active'] != false;
     if (widget.type == MasterDataType.product) {
+      if (!_editing && field('productivity_percentage').text.isEmpty) {
+        field('productivity_percentage').text = '95';
+      }
       _descriptionTouched = _editing;
       field('description').addListener(() {
         if (!_settingDescription) _descriptionTouched = true;
@@ -245,6 +248,8 @@ class _MasterDataFormDialogState extends State<MasterDataFormDialog> {
       'default_cycle_time_seconds': double.tryParse(
         field('default_cycle_time_seconds').text,
       ),
+      'productivity_percentage':
+          double.tryParse(field('productivity_percentage').text) ?? 95,
       'category': _productCategory,
     },
     MasterDataType.machine => {
@@ -474,6 +479,13 @@ class _MasterDataFormDialogState extends State<MasterDataFormDialog> {
           optional: true,
           positive: true,
         ),
+        input(
+          'productivity_percentage',
+          'Productivity Percentage (%)',
+          number: true,
+          positive: true,
+          maximum: 100,
+        ),
         input('description', 'Description', lines: 3),
       ],
       MasterDataType.machine => <Widget>[
@@ -644,6 +656,7 @@ class _MasterDataFormDialogState extends State<MasterDataFormDialog> {
     bool integer = false,
     bool optional = false,
     bool positive = false,
+    double? maximum,
   }) {
     return TextFormField(
       controller: field(key),
@@ -664,6 +677,9 @@ class _MasterDataFormDialogState extends State<MasterDataFormDialog> {
         }
         if (positive && double.parse(value) <= 0) {
           return 'Enter a value greater than zero';
+        }
+        if (maximum != null && double.parse(value) > maximum) {
+          return 'Enter a value up to ${maximum.toStringAsFixed(0)}';
         }
         if (integer && int.tryParse(value) == null) return 'Enter a valid year';
         return null;

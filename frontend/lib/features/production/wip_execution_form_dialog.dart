@@ -67,6 +67,7 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
       _repair,
       _ng,
       _startTime,
+      _endTime,
       _breakMinutes,
     ]) {
       controller.addListener(() {
@@ -181,17 +182,28 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
     _outputProductRecord?['default_cycle_time_seconds']?.toString() ?? '',
   );
 
-  DateTime? get _targetFinish {
+  double get _productivityPercentage =>
+      double.tryParse(
+        _outputProductRecord?['productivity_percentage']?.toString() ?? '',
+      ) ??
+      95;
+
+  double? get _targetOutcome {
     final start = _dateTimeValue(_date, _startTime.text);
+    final end = _dateTimeValue(_date, _endTime.text);
     final cycle = _targetCycle;
-    if (start == null || cycle == null || cycle <= 0) return null;
-    return start.add(
-      Duration(
-        seconds:
-            (cycle * _calculatedGood).round() +
-            (_value(_breakMinutes) * 60).round(),
-      ),
-    );
+    if (start == null ||
+        end == null ||
+        !end.isAfter(start) ||
+        cycle == null ||
+        cycle <= 0) {
+      return null;
+    }
+    final productiveSeconds =
+        end.difference(start).inSeconds - (_value(_breakMinutes) * 60).round();
+    if (productiveSeconds <= 0) return null;
+    return ((productiveSeconds / cycle) * (_productivityPercentage / 100))
+        .floorToDouble();
   }
 
   Future<void> _selectOutputProduct(String? value) async {
@@ -362,10 +374,14 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
                             '${_number(_targetCycle!)} seconds / ${unitLabel(_effectiveOutputUnit)}',
                           ),
                         _summary(
-                          'Target Finish Time',
-                          _targetFinish == null
-                              ? 'Set start time and cycle time'
-                              : '${_targetFinish!.hour.toString().padLeft(2, '0')}:${_targetFinish!.minute.toString().padLeft(2, '0')}',
+                          'Productivity',
+                          '${_number(_productivityPercentage)}%',
+                        ),
+                        _summary(
+                          'Target Outcome',
+                          _targetOutcome == null
+                              ? 'Set valid start, end, break, and cycle time'
+                              : '${_number(_targetOutcome!)} ${unitLabel(_effectiveOutputUnit)}',
                         ),
                         _summary(
                           'Available WIP',
