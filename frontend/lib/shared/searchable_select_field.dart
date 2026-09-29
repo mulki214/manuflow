@@ -26,6 +26,7 @@ class SearchableSelectField<T> extends FormField<T> {
              (option) => option.value == state.value,
            );
            final label = selected.isEmpty ? null : selected.first.label;
+           final placeholder = 'Select ${_fieldName(labelText)}';
            return InkWell(
              borderRadius: BorderRadius.circular(4),
              onTap: !enabled || onChanged == null
@@ -47,7 +48,10 @@ class SearchableSelectField<T> extends FormField<T> {
                      onChanged(selectedValue.value);
                    },
              child: InputDecorator(
-               isEmpty: label == null,
+               // A placeholder is rendered as child content.  Keeping this
+               // false makes InputDecorator float its label above that
+               // content rather than painting both at the same baseline.
+               isEmpty: false,
                decoration: InputDecoration(
                  labelText: labelText,
                  helperText: helperText,
@@ -56,7 +60,7 @@ class SearchableSelectField<T> extends FormField<T> {
                  suffixIcon: const Icon(Icons.search),
                ),
                child: Text(
-                 label ?? 'Select $labelText',
+                 label ?? placeholder,
                  maxLines: 1,
                  overflow: TextOverflow.ellipsis,
                  style: label == null
@@ -239,3 +243,5 @@ class _SearchableSelectDialogState<T>
 }
 
 String _normalize(String value) => value.toLowerCase().trim();
+
+String _fieldName(String label) => label.replaceFirst(RegExp(r'\s*\*\s*$'), '');
