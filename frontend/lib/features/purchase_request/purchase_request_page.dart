@@ -643,6 +643,8 @@ class _PurchaseRequestDetailDialog extends StatelessWidget {
                     'Receiving Plant',
                     plantCode == '-' ? '-' : plantLabel(plantCode),
                   ),
+                  if (request['reviewed_at'] != null)
+                    _detail('Reviewed At', _text(request['reviewed_at'])),
                 ],
               ),
               const SizedBox(height: 20),
@@ -697,19 +699,12 @@ class _PurchaseRequestDetailDialog extends StatelessWidget {
                     ),
                 ],
               ),
-              if (request['reviewed_by'] != null) ...[
-                const Divider(height: 30),
-                Text('Review', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 28,
-                  runSpacing: 12,
-                  children: [
-                    _detail('Reviewed By', _text(request['reviewed_by_name'])),
-                    _detail('Reviewed At', _text(request['reviewed_at'])),
-                    if (_text(request['rejection_reason']) != '-')
-                      _detail('Rejection Reason', _text(request['rejection_reason']), maxWidth: 520),
-                  ],
+              if (_text(request['rejection_reason']) != '-') ...[
+                const SizedBox(height: 16),
+                _detail(
+                  'Rejection Reason',
+                  _text(request['rejection_reason']),
+                  maxWidth: 520,
                 ),
               ],
             ],
