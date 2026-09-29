@@ -46,6 +46,13 @@ class PurchaseOrderStatus(str, enum.Enum):
 class PurchaseRequestStatus(str, enum.Enum):
     waiting_review = "waiting_review"
     approved = "approved"
+    partially_approved = "partially_approved"
+    rejected = "rejected"
+
+
+class PurchaseRequestItemApprovalStatus(str, enum.Enum):
+    pending = "pending"
+    approved = "approved"
     rejected = "rejected"
 
 
@@ -574,6 +581,14 @@ class PurchaseRequestItem(Base):
     purchase_order_number: Mapped[str | None] = mapped_column(
         ForeignKey("purchase_orders.po_number", ondelete="SET NULL"), nullable=True, index=True
     )
+    approval_status: Mapped[PurchaseRequestItemApprovalStatus] = mapped_column(
+        Enum(PurchaseRequestItemApprovalStatus, name="purchase_request_item_approval_status_enum"),
+        nullable=False, default=PurchaseRequestItemApprovalStatus.pending, index=True,
+    )
+    approved_quantity: Mapped[Decimal | None] = mapped_column(Numeric(14, 3), nullable=True)
+    review_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     purchase_request: Mapped[PurchaseRequest] = relationship(back_populates="items")
 
 

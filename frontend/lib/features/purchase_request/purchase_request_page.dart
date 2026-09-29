@@ -182,6 +182,25 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
     }
   }
 
+  Future<void> _approvePartial(Map<String, dynamic> pr) async {
+    final lines = (pr['items'] as List)
+        .cast<Map<String, dynamic>>()
+        .map(_PurchaseRequestApprovalLine.fromJson)
+        .toList();
+    final reviewed = await showDialog<bool>(
+      context: context,
+      builder: (_) => _PurchaseRequestApprovalDialog(
+        requestNumber: pr['request_number'].toString(),
+        lines: lines,
+        onSubmit: (payload) => widget.auth.api.postJson(
+          '/purchase-requests/${Uri.encodeComponent(pr['request_number'].toString())}/approve',
+          payload,
+        ),
+      ),
+    );
+    if (reviewed == true) _load();
+  }
+
   Future<void> _showDetail(Map<String, dynamic> summary) async {
     final number = summary['request_number'].toString();
     try {
@@ -271,7 +290,7 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                                         _form(context, existing: p);
                                       }
                                       if (a == 'approve') {
-                                        _review(p, true);
+                                        _approvePartial(p);
                                       }
                                       if (a == 'reject') {
                                         _review(p, false);
@@ -587,6 +606,188 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
   }
 }
 
+class _PurchaseRequestApprovalLine {
+  _PurchaseRequestApprovalLine({
+    required this.itemId,
+    required this.productLabel,
+    required this.requestedQuantity,
+    required this.unit,
+  }) : approvedQuantity = TextEditingController(text: requestedQuantity),
+       reason = TextEditingController();
+
+  factory _PurchaseRequestApprovalLine.fromJson(Map<String, dynamic> json) =>
+      _PurchaseRequestApprovalLine(
+        itemId: json['id'] as int,
+        productLabel: '${json['product_code']} — ${json['description']}',
+        requestedQuantity: formatQuantity(
+          json['quantity'],
+          json['unit']?.toString() ?? 'pcs',
+        ),
+        unit: json['unit']?.toString() ?? 'pcs',
+      );
+
+  final int itemId;
+  final String productLabel;
+  final String requestedQuantity;
+  final String unit;
+  bool approved = true;
+  final TextEditingController approvedQuantity;
+  final TextEditingController reason;
+
+  void dispose() {
+    approvedQuantity.dispose();
+    reason.dispose();
+  }
+}
+
+class _PurchaseRequestApprovalDialog extends StatefulWidget {
+  const _PurchaseRequestApprovalDialog({
+    required this.requestNumber,
+    required this.lines,
+    required this.onSubmit,
+  });
+
+  final String requestNumber;
+  final List<_PurchaseRequestApprovalLine> lines;
+  final Future<void> Function(Map<String, dynamic> payload) onSubmit;
+
+  @override
+  State<_PurchaseRequestApprovalDialog> createState() =>
+      _PurchaseRequestApprovalDialogState();
+}
+
+class _PurchaseRequestApprovalDialogState
+    extends State<_PurchaseRequestApprovalDialog> {
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    for (final line in widget.lines) {
+      line.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    setState(() => _error = null);
+    for (final line in widget.lines) {
+      final quantity = double.tryParse(line.approvedQuantity.text.trim());
+      if (line.approved && (quantity == null || quantity <= 0)) {
+        setState(() => _error = 'Enter an approved quantity for every selected item.');
+        return;
+      }
+      final changed = line.approved &&
+          line.approvedQuantity.text.trim() != line.requestedQuantity;
+      if ((!line.approved || changed) && line.reason.text.trim().length < 3) {
+        setState(() => _error = 'A reason is required for a rejected or adjusted item.');
+        return;
+      }
+    }
+    setState(() => _saving = true);
+    try {
+      await widget.onSubmit({
+        'items': widget.lines
+            .map(
+              (line) => {
+                'item_id': line.itemId,
+                'approved': line.approved,
+                'approved_quantity': line.approved
+                    ? line.approvedQuantity.text.trim()
+                    : '0',
+                'reason': line.reason.text.trim(),
+              },
+            )
+            .toList(),
+      });
+      if (mounted) Navigator.pop(context, true);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text('Review ${widget.requestNumber}'),
+    content: SizedBox(
+      width: 720,
+      child: ModalScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Select the items to approve. Adjusted or rejected items require a reason.',
+            ),
+            const SizedBox(height: 12),
+            ...widget.lines.map(
+              (line) => Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        value: line.approved,
+                        title: Text(line.productLabel),
+                        subtitle: Text('Requested: ${line.requestedQuantity} ${line.unit}'),
+                        onChanged: _saving
+                            ? null
+                            : (value) => setState(
+                                () => line.approved = value ?? false,
+                              ),
+                      ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: line.approvedQuantity,
+                              enabled: line.approved && !_saving,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              decoration: InputDecoration(
+                                labelText: 'Approved Quantity (${line.unit})',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextField(
+                              controller: line.reason,
+                              enabled: !_saving,
+                              decoration: const InputDecoration(labelText: 'Reason'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ],
+          ],
+        ),
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: _saving ? null : () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        onPressed: _saving ? null : _submit,
+        child: Text(_saving ? 'Reviewing...' : 'Submit Review'),
+      ),
+    ],
+  );
+}
+
 class _PurchaseRequestDetailDialog extends StatelessWidget {
   const _PurchaseRequestDetailDialog({
     required this.request,
@@ -657,7 +858,10 @@ class _PurchaseRequestDetailDialog extends StatelessWidget {
                     DataColumn(label: Text('Product')),
                     DataColumn(label: Text('Part No')),
                     DataColumn(label: Text('Description')),
-                    DataColumn(label: Text('Quantity'), numeric: true),
+                    DataColumn(label: Text('Requested Qty'), numeric: true),
+                    DataColumn(label: Text('Approved Qty'), numeric: true),
+                    DataColumn(label: Text('Line Status')),
+                    DataColumn(label: Text('Review Reason')),
                     DataColumn(label: Text('Remark')),
                     DataColumn(label: Text('Generated PO')),
                   ],
@@ -671,6 +875,9 @@ class _PurchaseRequestDetailDialog extends StatelessWidget {
                             DataCell(SelectableText(_text(item['part_no']))),
                             DataCell(SizedBox(width: 220, child: SelectableText(_text(item['description'])))),
                             DataCell(Text('${_quantity(item)} ${_text(item['unit'])}')),
+                            DataCell(Text(item['approved_quantity'] == null ? '-' : '${formatQuantity(item['approved_quantity'], item['unit']?.toString() ?? 'pcs')} ${_text(item['unit'])}')),
+                            DataCell(Text(_text(item['approval_status']).replaceAll('_', ' '))),
+                            DataCell(SizedBox(width: 180, child: SelectableText(_text(item['review_reason'])))),
                             DataCell(SizedBox(width: 180, child: SelectableText(_text(item['remark'])))),
                             DataCell(CopyableCodeText(_text(item['purchase_order_number']))),
                           ],

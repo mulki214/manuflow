@@ -15,11 +15,11 @@ from app.document_services import purchase_request_pdf_bytes, signed_document_pa
 from app.models import (
     AccessLevel, Corporation, DailyPurchaseRequestSequence, FulfillmentStatus,
     Plant, Product, PurchaseOrder, PurchaseOrderItem, PurchaseOrderStatus,
-    PurchaseRequest, PurchaseRequestItem, PurchaseRequestStatus, User,
+    PurchaseRequest, PurchaseRequestItem, PurchaseRequestItemApprovalStatus, PurchaseRequestStatus, User,
 )
 from app.purchasing_services import generate_purchase_order_number, payment_due_date
 from app.schemas import (
-    PaginatedPurchaseRequests, PurchaseRequestCreate, PurchaseRequestRejection, PurchaseRequestUpdate,
+    PaginatedPurchaseRequests, PurchaseRequestApproval, PurchaseRequestCreate, PurchaseRequestRejection, PurchaseRequestUpdate,
     PurchaseRequestResponse,
 )
 
@@ -144,7 +144,7 @@ async def download_pdf(request_number: str, db: AsyncSession = Depends(get_db), 
 
 
 @router.post("/{request_number}/approve", response_model=PurchaseRequestResponse)
-async def approve(request_number: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> PurchaseRequestResponse:
+async def approve(request_number: str, data: PurchaseRequestApproval | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> PurchaseRequestResponse:
     if not can_review(current_user): raise HTTPException(status_code=403, detail="Only Head Purchasing can review Purchase Requests")
     record = await get_request(db, request_number)
     if record.status != PurchaseRequestStatus.waiting_review: raise HTTPException(status_code=409, detail="Purchase Request has already been reviewed")
@@ -153,14 +153,47 @@ async def approve(request_number: str, db: AsyncSession = Depends(get_db), curre
     plant = await db.get(Plant, record.delivery_plant_code)
     if not plant:
         raise HTTPException(status_code=422, detail="Selected delivery plant was not found")
-    products = {item.product_code: await db.get(Product, item.product_code) for item in record.items}
-    missing_supplier = [item.product_code for item, product in ((item, products[item.product_code]) for item in record.items) if not product or not product.supplier_code]
+    decisions = {decision.item_id: decision for decision in data.items} if data else {}
+    if data and set(decisions) != {item.id for item in record.items}:
+        raise HTTPException(status_code=422, detail="Every Purchase Request item must be reviewed")
+    approved_items: list[PurchaseRequestItem] = []
+    now = datetime.now(ZoneInfo(settings.business_timezone))
+    for item in record.items:
+        decision = decisions.get(item.id)
+        approved = decision.approved if decision else True
+        reason = decision.reason.strip() if decision else ""
+        if not approved:
+            if len(reason) < 3:
+                raise HTTPException(status_code=422, detail=f"A reason is required for rejected item {item.product_code}")
+            item.approval_status = PurchaseRequestItemApprovalStatus.rejected
+            item.approved_quantity = Decimal("0")
+            item.review_reason = reason
+            item.reviewed_by = current_user.id
+            item.reviewed_at = now
+            continue
+        approved_quantity = Decimal(decision.approved_quantity) if decision and decision.approved_quantity is not None else Decimal(item.quantity)
+        if approved_quantity <= 0 or approved_quantity > Decimal(item.quantity):
+            raise HTTPException(status_code=422, detail=f"Approved quantity for {item.product_code} must be greater than zero and cannot exceed requested quantity")
+        try:
+            from app.operational_services import require_whole_quantity
+            require_whole_quantity(approved_quantity, item.unit, "Approved quantity")
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if approved_quantity != Decimal(item.quantity) and len(reason) < 3:
+            raise HTTPException(status_code=422, detail=f"A reason is required when adjusting quantity for {item.product_code}")
+        item.approval_status = PurchaseRequestItemApprovalStatus.approved
+        item.approved_quantity = approved_quantity
+        item.review_reason = reason or None
+        item.reviewed_by = current_user.id
+        item.reviewed_at = now
+        approved_items.append(item)
+    products = {item.product_code: await db.get(Product, item.product_code) for item in approved_items}
+    missing_supplier = [item.product_code for item, product in ((item, products[item.product_code]) for item in approved_items) if not product or not product.supplier_code]
     if missing_supplier:
         raise HTTPException(status_code=422, detail=f"Products need an external supplier before approval: {', '.join(missing_supplier)}")
     grouped: dict[str, list[PurchaseRequestItem]] = {}
-    for item in record.items:
+    for item in approved_items:
         grouped.setdefault(products[item.product_code].supplier_code, []).append(item)
-    now = datetime.now(ZoneInfo(settings.business_timezone))
     for supplier_code, items in grouped.items():
         supplier = await db.get(Corporation, supplier_code)
         if not supplier or not supplier.is_supplier:
@@ -182,10 +215,13 @@ async def approve(request_number: str, db: AsyncSession = Depends(get_db), curre
             reviewed_by=current_user.id, reviewed_at=now,
         )
         for line_number, item in enumerate(items, 1):
-            order.items.append(PurchaseOrderItem(line_number=line_number, product_code=item.product_code, part_name=item.part_name, part_no=item.part_no, description=item.description, quantity_grams=item.quantity, unit=item.unit, received_quantity=Decimal("0"), unit_price=Decimal("0"), amount=Decimal("0"), remark=item.remark))
+            order.items.append(PurchaseOrderItem(line_number=line_number, product_code=item.product_code, part_name=item.part_name, part_no=item.part_no, description=item.description, quantity_grams=item.approved_quantity, unit=item.unit, received_quantity=Decimal("0"), unit_price=Decimal("0"), amount=Decimal("0"), remark=item.remark))
             item.purchase_order_number = po_number
         db.add(order)
-    record.status = PurchaseRequestStatus.approved; record.reviewed_by = current_user.id; record.reviewed_at = now
+    record.status = (PurchaseRequestStatus.approved if len(approved_items) == len(record.items) else PurchaseRequestStatus.partially_approved if approved_items else PurchaseRequestStatus.rejected)
+    record.reviewed_by = current_user.id; record.reviewed_at = now
+    if not approved_items:
+        record.rejection_reason = "All requested items were rejected"
     await db.commit(); return await response(db, await get_request(db, request_number), current_user)
 
 
@@ -194,4 +230,11 @@ async def reject(request_number: str, data: PurchaseRequestRejection, db: AsyncS
     if not can_review(current_user): raise HTTPException(status_code=403, detail="Only Head Purchasing can review Purchase Requests")
     record = await get_request(db, request_number)
     if record.status != PurchaseRequestStatus.waiting_review: raise HTTPException(status_code=409, detail="Purchase Request has already been reviewed")
-    record.status = PurchaseRequestStatus.rejected; record.reviewed_by = current_user.id; record.reviewed_at = datetime.now(ZoneInfo(settings.business_timezone)); record.rejection_reason = data.reason.strip(); await db.commit(); return await response(db, await get_request(db, request_number), current_user)
+    now = datetime.now(ZoneInfo(settings.business_timezone))
+    for item in record.items:
+        item.approval_status = PurchaseRequestItemApprovalStatus.rejected
+        item.approved_quantity = Decimal("0")
+        item.review_reason = data.reason.strip()
+        item.reviewed_by = current_user.id
+        item.reviewed_at = now
+    record.status = PurchaseRequestStatus.rejected; record.reviewed_by = current_user.id; record.reviewed_at = now; record.rejection_reason = data.reason.strip(); await db.commit(); return await response(db, await get_request(db, request_number), current_user)

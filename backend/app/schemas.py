@@ -12,6 +12,7 @@ from app.models import (
     ProductSupplySource,
     PurchaseOrderStatus,
     PurchaseRequestStatus,
+    PurchaseRequestItemApprovalStatus,
     ReceivingSourceType,
     ReceivingStatus,
     ReceivingTransportSource,
@@ -1633,6 +1634,23 @@ class PurchaseRequestRejection(BaseModel):
     reason: str = Field(min_length=3, max_length=2000)
 
 
+class PurchaseRequestApprovalItem(BaseModel):
+    item_id: int = Field(gt=0)
+    approved: bool = True
+    approved_quantity: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=3)
+    reason: str = Field(default="", max_length=2000)
+
+
+class PurchaseRequestApproval(BaseModel):
+    items: list[PurchaseRequestApprovalItem] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def unique_items(self) -> "PurchaseRequestApproval":
+        if len({item.item_id for item in self.items}) != len(self.items):
+            raise ValueError("A Purchase Request item can only be reviewed once")
+        return self
+
+
 class PurchaseRequestItemResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -1645,6 +1663,11 @@ class PurchaseRequestItemResponse(BaseModel):
     unit: str
     remark: str
     purchase_order_number: str | None = None
+    approval_status: PurchaseRequestItemApprovalStatus
+    approved_quantity: Decimal | None
+    review_reason: str | None
+    reviewed_by: str | None
+    reviewed_at: datetime | None
 
 
 class PurchaseRequestResponse(BaseModel):

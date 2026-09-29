@@ -235,10 +235,12 @@ def purchase_request_pdf_bytes(request: Any) -> bytes:
     center = ParagraphStyle("pr-center", parent=styles["Normal"], alignment=TA_CENTER)
     story = [Paragraph("<b>PURCHASE REQUEST</b>", styles["Title"]), Paragraph(f"<b>{request.request_number}</b>", center), Spacer(1, 5 * mm)]
     story.append(Table([["Date", request.request_date.strftime("%d/%m/%Y"), "Status", request.status], ["Requested By", request.created_by_name, "Department", request.department_code or "-"], ["Notes", request.notes or "-", "Reviewed By", request.reviewed_by_name or "Pending review"]], colWidths=[28 * mm, 55 * mm, 35 * mm, 60 * mm], style=[("GRID", (0, 0), (-1, -1), .3, colors.grey), ("VALIGN", (0, 0), (-1, -1), "TOP")]))
-    rows = [["No", "Product", "Description", "Qty", "Unit", "Remark"]]
+    rows = [["No", "Product", "Description", "Requested", "Approved", "Status", "Review Reason", "PO"]]
     for item in request.items:
-        rows.append([item.line_number, item.product_code, Paragraph(item.description, styles["BodyText"]), format_document_quantity(item.quantity, item.unit), item.unit, item.remark])
-    story.extend([Spacer(1, 5 * mm), Table(rows, repeatRows=1, colWidths=[10 * mm, 27 * mm, 62 * mm, 22 * mm, 18 * mm, 39 * mm], style=[("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4F659F")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("GRID", (0, 0), (-1, -1), .3, colors.grey), ("VALIGN", (0, 0), (-1, -1), "TOP")])])
+        requested = f"{format_document_quantity(item.quantity, item.unit)} {item.unit}"
+        approved = "-" if item.approved_quantity is None else f"{format_document_quantity(item.approved_quantity, item.unit)} {item.unit}"
+        rows.append([item.line_number, item.product_code, Paragraph(item.description, styles["BodyText"]), requested, approved, item.approval_status.value.replace("_", " "), Paragraph(item.review_reason or "-", styles["BodyText"]), item.purchase_order_number or "-"])
+    story.extend([Spacer(1, 5 * mm), Table(rows, repeatRows=1, colWidths=[8 * mm, 21 * mm, 40 * mm, 19 * mm, 19 * mm, 20 * mm, 31 * mm, 18 * mm], style=[("BACKGROUND", (0, 0), (-1, 0), colors.white), ("TEXTCOLOR", (0, 0), (-1, 0), colors.black), ("GRID", (0, 0), (-1, -1), .3, colors.grey), ("VALIGN", (0, 0), (-1, -1), "TOP")])])
     def qr(payload: str | None):
         if not payload: return Paragraph("Pending review", center)
         image = BytesIO(); qrcode.make(payload).save(image, format="PNG"); image.seek(0)
