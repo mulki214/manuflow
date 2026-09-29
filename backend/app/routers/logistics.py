@@ -135,7 +135,6 @@ async def delivery_lines(db: AsyncSession, record: Delivery) -> list[DeliveryLin
                 .order_by(DeliveryLine.id)
             )
         )
-        .scalars()
         .all()
     )
 
@@ -148,10 +147,14 @@ async def finish_queue(
     jobs = list(
         (
             await db.execute(
-                select(WipLotJob).where(
+                select(WipLotJob, Product, Plant)
+                .join(Product, Product.code == WipLotJob.product_code)
+                .join(Plant, Plant.code == WipLotJob.plant_code)
+                .where(
                     WipLotJob.status == WipLotStatus.awaiting_finish_goods,
                     WipLotJob.current_quantity > 0,
                 )
+                .order_by(WipLotJob.created_at, WipLotJob.id)
             )
         )
         .scalars()
@@ -161,13 +164,16 @@ async def finish_queue(
         {
             "job_id": j.id,
             "product_code": j.product_code,
+            "product_name": product.part_name,
+            "description": product.description,
             "lot_number": j.lot_number,
             "lot_segment_code": j.lot_segment_code,
             "quantity": j.current_quantity,
             "unit": j.unit,
             "plant_code": j.plant_code,
+            "plant_name": plant.name,
         }
-        for j in jobs
+        for j, product, plant in jobs
     ]
 
 
