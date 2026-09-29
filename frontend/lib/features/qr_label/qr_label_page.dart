@@ -218,8 +218,8 @@ class _QrLabelFormState extends State<_QrLabelForm> {
   late final TextEditingController _template = TextEditingController(
     text: widget.item?['template']?.toString() ?? '',
   );
-  List<Map<String, dynamic>> _products = [], _plants = [];
-  Map<String, dynamic>? _product, _plant;
+  final Map<String, List<Map<String, dynamic>>> _lookups = {};
+  final Map<String, Map<String, dynamic>?> _selected = {};
   bool _saving = false;
   @override
   void initState() {
@@ -230,13 +230,30 @@ class _QrLabelFormState extends State<_QrLabelForm> {
 
   Future<void> _load() async {
     final r = await Future.wait([
+      widget.api.getJson('/master-data/departments?page=1&size=100'),
+      widget.api.getJson('/master-data/corporations?page=1&size=100'),
       widget.api.getJson('/master-data/products?page=1&size=100'),
+      widget.api.getJson('/master-data/machines?page=1&size=100'),
       widget.api.getJson('/master-data/plants?page=1&size=100'),
+      widget.api.getJson('/master-data/warehouse-storages?page=1&size=100'),
+      widget.api.getJson('/master-data/transportations?page=1&size=100'),
+      widget.api.getJson('/master-data/storage-locations?page=1&size=100'),
     ]);
     if (mounted) {
       setState(() {
-        _products = (r[0]['items'] as List).cast<Map<String, dynamic>>();
-        _plants = (r[1]['items'] as List).cast<Map<String, dynamic>>();
+        for (var index = 0; index < r.length; index++) {
+          _lookups[[
+            'department',
+            'corporation',
+            'product',
+            'machine',
+            'plant',
+            'storage',
+            'transportation',
+            'location',
+          ][index]] = (r[index]['items'] as List)
+              .cast<Map<String, dynamic>>();
+        }
       });
     }
   }
@@ -245,14 +262,143 @@ class _QrLabelFormState extends State<_QrLabelForm> {
     var text = _template.text;
     final values = {
       '{date}': DateTime.now().toIso8601String().substring(0, 10),
-      '{product_code}': _product?['code']?.toString() ?? '',
-      '{product_name}': _product?['part_name']?.toString() ?? '',
-      '{part_no}': _product?['part_no']?.toString() ?? '',
-      '{plant_code}': _plant?['code']?.toString() ?? '',
-      '{plant_name}': _plant?['name']?.toString() ?? '',
+      '{time}': TimeOfDay.now().format(context),
+      '{datetime}': DateTime.now().toIso8601String(),
+      '{department_code}': _value('department', 'code'),
+      '{department_name}': _value('department', 'name'),
+      '{corporation_code}': _value('corporation', 'code'),
+      '{corporation_name}': _value('corporation', 'name'),
+      '{customer_code}': _value('customer', 'code'),
+      '{customer_name}': _value('customer', 'name'),
+      '{supplier_code}': _value('supplier', 'code'),
+      '{supplier_name}': _value('supplier', 'name'),
+      '{product_code}': _value('product', 'code'),
+      '{product_name}': _value('product', 'part_name'),
+      '{part_no}': _value('product', 'part_no'),
+      '{product_description}': _value('product', 'description'),
+      '{product_category}': _value('product', 'category'),
+      '{plant_code}': _value('plant', 'code'),
+      '{plant_name}': _value('plant', 'name'),
+      '{plant_address}': _value('plant', 'full_address'),
+      '{machine_code}': _value('machine', 'code'),
+      '{machine_name}': _value('machine', 'name'),
+      '{machine_type}': _value('machine', 'machine_type'),
+      '{storage_code}': _value('storage', 'code'),
+      '{storage_name}': _value('storage', 'name'),
+      '{storage_type}': _value('storage', 'storage_type'),
+      '{location_code}': _value('location', 'code'),
+      '{location_name}': _value('location', 'name'),
+      '{location_description}': _value('location', 'description'),
+      '{transportation_code}': _value('transportation', 'code'),
+      '{vehicle_number}': _value('transportation', 'vehicle_number'),
+      '{carrier_name}': _value('transportation', 'carrier_name'),
     };
     values.forEach((k, v) => text = text.replaceAll(k, v));
     return text;
+  }
+
+  String _value(String source, String key) =>
+      _selected[source]?[key]?.toString() ?? '';
+  bool _needs(String source) =>
+      RegExp('\\{$source(?:_|\\})').hasMatch(_template.text) ||
+      (source == 'customer' && _template.text.contains('{customer_')) ||
+      (source == 'supplier' && _template.text.contains('{supplier_')) ||
+      (source == 'location' && _template.text.contains('{location_'));
+  List<Map<String, dynamic>> _items(String source) =>
+      _lookups[source] ?? const [];
+
+  List<Widget> _conditionalSelectors() {
+    final fields = <Widget>[];
+    void add(
+      String source,
+      String label,
+      List<Map<String, dynamic>> options,
+      String Function(Map<String, dynamic>) text,
+    ) {
+      if (!_needs(source)) return;
+      fields.add(
+        SearchableSelectField<Map<String, dynamic>>(
+          value: _selected[source],
+          labelText: '$label *',
+          allowClear: true,
+          options: options
+              .map(
+                (item) => SearchableSelectOption(
+                  value: item,
+                  label: text(item),
+                  searchTerms: [
+                    item['code']?.toString() ?? '',
+                    item['name']?.toString() ?? '',
+                    item['part_name']?.toString() ?? '',
+                    item['description']?.toString() ?? '',
+                    item['vehicle_number']?.toString() ?? '',
+                  ],
+                ),
+              )
+              .toList(),
+          onChanged: (value) => setState(() => _selected[source] = value),
+        ),
+      );
+      fields.add(const SizedBox(height: 12));
+    }
+
+    add(
+      'department',
+      'Department',
+      _items('department'),
+      (v) => '${v['code']} — ${v['name']}',
+    );
+    add(
+      'corporation',
+      'Corporation',
+      _items('corporation'),
+      (v) => '${v['code']} — ${v['name']}',
+    );
+    add(
+      'customer',
+      'Customer',
+      _items('corporation').where((v) => v['is_customer'] == true).toList(),
+      (v) => '${v['code']} — ${v['name']}',
+    );
+    add(
+      'supplier',
+      'Supplier',
+      _items('corporation').where((v) => v['is_supplier'] == true).toList(),
+      (v) => '${v['code']} — ${v['name']}',
+    );
+    add('product', 'Product', _items('product'), productSelectLabel);
+    add(
+      'plant',
+      'Plant',
+      _items('plant'),
+      (v) => '${v['code']} — ${v['name']}',
+    );
+    add(
+      'machine',
+      'Machine',
+      _items('machine'),
+      (v) => '${v['code']} — ${v['name']}',
+    );
+    add(
+      'storage',
+      'Storage / Warehouse',
+      _items('storage'),
+      (v) => '${v['code']} — ${v['name']}',
+    );
+    add(
+      'location',
+      'Storage Location',
+      _items('location'),
+      (v) => '${v['storage_name']} — ${v['code']} — ${v['name']}',
+    );
+    add(
+      'transportation',
+      'Transportation',
+      _items('transportation'),
+      (v) =>
+          '${v['code']} — ${v['vehicle_number']} — ${v['carrier_name'] ?? ''}',
+    );
+    return fields;
   }
 
   void _token(String value) {
@@ -329,11 +475,36 @@ class _QrLabelFormState extends State<_QrLabelForm> {
               children:
                   [
                         '{date}',
+                        '{time}',
+                        '{datetime}',
+                        '{department_code}',
+                        '{department_name}',
+                        '{corporation_code}',
+                        '{corporation_name}',
+                        '{customer_code}',
+                        '{customer_name}',
+                        '{supplier_code}',
+                        '{supplier_name}',
                         '{product_code}',
                         '{product_name}',
                         '{part_no}',
+                        '{product_description}',
+                        '{product_category}',
                         '{plant_code}',
                         '{plant_name}',
+                        '{plant_address}',
+                        '{machine_code}',
+                        '{machine_name}',
+                        '{machine_type}',
+                        '{storage_code}',
+                        '{storage_name}',
+                        '{storage_type}',
+                        '{location_code}',
+                        '{location_name}',
+                        '{location_description}',
+                        '{transportation_code}',
+                        '{vehicle_number}',
+                        '{carrier_name}',
                       ]
                       .map(
                         (x) => ActionChip(
@@ -343,44 +514,7 @@ class _QrLabelFormState extends State<_QrLabelForm> {
                       )
                       .toList(),
             ),
-            const SizedBox(height: 16),
-            SearchableSelectField<Map<String, dynamic>>(
-              value: _product,
-              labelText: 'Product (optional)',
-              allowClear: true,
-              options: _products
-                  .map(
-                    (p) => SearchableSelectOption(
-                      value: p,
-                      label: productSelectLabel(p),
-                      searchTerms: [
-                        p['code'].toString(),
-                        p['part_name']?.toString() ?? '',
-                      ],
-                    ),
-                  )
-                  .toList(),
-              onChanged: (v) => setState(() => _product = v),
-            ),
-            const SizedBox(height: 12),
-            SearchableSelectField<Map<String, dynamic>>(
-              value: _plant,
-              labelText: 'Plant (optional)',
-              allowClear: true,
-              options: _plants
-                  .map(
-                    (p) => SearchableSelectOption(
-                      value: p,
-                      label: '${p['code']} — ${p['name']}',
-                      searchTerms: [
-                        p['code'].toString(),
-                        p['name']?.toString() ?? '',
-                      ],
-                    ),
-                  )
-                  .toList(),
-              onChanged: (v) => setState(() => _plant = v),
-            ),
+            ..._conditionalSelectors(),
             const SizedBox(height: 18),
             const Text(
               'Resolved Text',

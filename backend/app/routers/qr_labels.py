@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +10,25 @@ from app.models import AccessLevel, QrLabel, User
 from app.schemas import PaginatedQrLabels, QrLabelCreate, QrLabelResponse, QrLabelUpdate
 
 router = APIRouter(prefix="/qr-labels", tags=["QR Labels"])
+
+ALLOWED_TOKENS = {
+    "date", "time", "datetime", "department_code", "department_name",
+    "corporation_code", "corporation_name", "customer_code", "customer_name",
+    "supplier_code", "supplier_name", "product_code", "product_name", "part_no",
+    "product_description", "product_category", "plant_code", "plant_name", "plant_address",
+    "machine_code", "machine_name", "machine_type", "storage_code", "storage_name",
+    "storage_type", "location_code", "location_name", "location_description",
+    "transportation_code", "vehicle_number", "carrier_name",
+}
+
+
+def validate_template(data: QrLabelCreate) -> None:
+    tokens = set(re.findall(r"\{([^{}]+)\}", data.template))
+    unknown = tokens - ALLOWED_TOKENS
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"Unknown QR Label token: {sorted(unknown)[0]}")
+    if re.search(r"\{[^{}]+\}", data.resolved_text):
+        raise HTTPException(status_code=422, detail="Resolved QR Label text contains an unresolved token")
 
 
 def response(record: QrLabel) -> QrLabelResponse:
@@ -35,6 +56,7 @@ async def list_qr_labels(
 
 @router.post("", response_model=QrLabelResponse, status_code=status.HTTP_201_CREATED)
 async def create_qr_label(data: QrLabelCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> QrLabelResponse:
+    validate_template(data)
     record = QrLabel(**data.model_dump(), created_by=current_user.id, created_by_name=f"{current_user.first_name} {current_user.last_name}".strip())
     db.add(record); await db.commit(); await db.refresh(record)
     return response(record)
@@ -50,6 +72,7 @@ async def get_record(label_id: int, db: AsyncSession) -> QrLabel:
 async def update_qr_label(label_id: int, data: QrLabelUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> QrLabelResponse:
     record = await get_record(label_id, db)
     if not can_manage(record, current_user): raise HTTPException(status_code=403, detail="Only the creator or an administrator can edit this QR Label")
+    validate_template(data)
     for key, value in data.model_dump().items(): setattr(record, key, value)
     await db.commit(); await db.refresh(record); return response(record)
 
