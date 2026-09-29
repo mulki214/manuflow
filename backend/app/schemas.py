@@ -1301,6 +1301,31 @@ class PaginatedProductionExecutions(BaseModel):
     size: int
 
 
+class QrLabelCreate(BaseModel):
+    label_name: str = Field(min_length=1, max_length=150)
+    template: str = Field(min_length=1, max_length=500)
+    resolved_text: str = Field(min_length=1, max_length=500)
+
+
+class QrLabelUpdate(QrLabelCreate):
+    pass
+
+
+class QrLabelResponse(QrLabelCreate):
+    id: int
+    created_by: str
+    created_by_name: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class PaginatedQrLabels(BaseModel):
+    items: list[QrLabelResponse]
+    total: int
+    page: int
+    size: int
+
+
 class QualityInspectionCreate(BaseModel):
     inspection_date: date
     shift: str = Field(min_length=1, max_length=20)

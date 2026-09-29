@@ -1082,6 +1082,19 @@ class DailyProductionSequence(Base):
     last_value: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
+class QrLabel(Base):
+    __tablename__ = "qr_labels"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    label_name: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
+    template: Mapped[str] = mapped_column(Text, nullable=False)
+    resolved_text: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    created_by_name: Mapped[str] = mapped_column(String(201), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class DailyQualitySequence(Base):
     __tablename__ = "daily_quality_sequences"
 
