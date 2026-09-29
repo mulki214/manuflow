@@ -1644,6 +1644,7 @@ class PurchaseRequestItemResponse(BaseModel):
     quantity: Decimal
     unit: str
     remark: str
+    purchase_order_number: str | None = None
 
 
 class PurchaseRequestResponse(BaseModel):

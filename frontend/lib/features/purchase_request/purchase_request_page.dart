@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
 import '../../shared/app_module_scaffold.dart';
 import '../../shared/app_sidebar.dart';
+import '../../shared/modal_widgets.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
 
@@ -180,6 +181,29 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
     }
   }
 
+  Future<void> _showDetail(Map<String, dynamic> summary) async {
+    final number = summary['request_number'].toString();
+    try {
+      final request = await widget.auth.api.getJson(
+        '/purchase-requests/${Uri.encodeComponent(number)}',
+      );
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => _PurchaseRequestDetailDialog(
+          request: request,
+          plantLabel: _plantLabel,
+        ),
+      );
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) => AppModuleScaffold(
     auth: widget.auth,
@@ -220,6 +244,7 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                         final p = _items[i];
                         return Card(
                           child: ListTile(
+                            onTap: () => _showDetail(p),
                             title: Text(
                               '${p['request_number']} — ${p['created_by_name']}',
                             ),
@@ -559,6 +584,138 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
     notes.dispose();
     if (ok == true) _load();
   }
+}
+
+class _PurchaseRequestDetailDialog extends StatelessWidget {
+  const _PurchaseRequestDetailDialog({
+    required this.request,
+    required this.plantLabel,
+  });
+
+  final Map<String, dynamic> request;
+  final String Function(String code) plantLabel;
+
+  String _text(Object? value) {
+    final result = value?.toString().trim() ?? '';
+    return result.isEmpty ? '-' : result;
+  }
+
+  String _quantity(Map<String, dynamic> item) => formatQuantity(
+    item['quantity'],
+    item['unit']?.toString() ?? 'pcs',
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final status = _text(request['status']).replaceAll('_', ' ');
+    final items = (request['items'] as List? ?? const [])
+        .cast<Map<String, dynamic>>();
+    final plantCode = _text(request['delivery_plant_code']);
+    return AlertDialog(
+      title: const Text('Purchase Request Detail'),
+      content: SizedBox(
+        width: 900,
+        child: ModalScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DetailValue(
+                label: 'Request Number',
+                value: _text(request['request_number']),
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 28,
+                runSpacing: 12,
+                children: [
+                  _detail('Status', status),
+                  _detail('Request Date', _text(request['request_date'])),
+                  _detail(
+                    'Expected Arrival Date',
+                    _text(request['requested_delivery_date']),
+                  ),
+                  _detail('Requested By', _text(request['created_by_name'])),
+                  _detail('Department Code', _text(request['department_code'])),
+                  _detail(
+                    'Receiving Plant',
+                    plantCode == '-' ? '-' : plantLabel(plantCode),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Text('Requested Products', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              ModalHorizontalScroll(
+                child: DataTable(
+                  columns: const [
+                    DataColumn(label: Text('Product')),
+                    DataColumn(label: Text('Part No')),
+                    DataColumn(label: Text('Description')),
+                    DataColumn(label: Text('Quantity'), numeric: true),
+                    DataColumn(label: Text('Remark')),
+                    DataColumn(label: Text('Generated PO')),
+                  ],
+                  rows: items
+                      .map(
+                        (item) => DataRow(
+                          cells: [
+                            DataCell(
+                              CopyableCodeText(_text(item['product_code'])),
+                            ),
+                            DataCell(SelectableText(_text(item['part_no']))),
+                            DataCell(SizedBox(width: 220, child: SelectableText(_text(item['description'])))),
+                            DataCell(Text('${_quantity(item)} ${_text(item['unit'])}')),
+                            DataCell(SizedBox(width: 180, child: SelectableText(_text(item['remark'])))),
+                            DataCell(CopyableCodeText(_text(item['purchase_order_number']))),
+                          ],
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              _detail('Notes', _text(request['notes']), maxWidth: 800),
+              if (request['reviewed_by'] != null) ...[
+                const Divider(height: 30),
+                Text('Review', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 28,
+                  runSpacing: 12,
+                  children: [
+                    _detail('Reviewed By', _text(request['reviewed_by_name'])),
+                    _detail('Reviewed At', _text(request['reviewed_at'])),
+                    if (_text(request['rejection_reason']) != '-')
+                      _detail('Rejection Reason', _text(request['rejection_reason']), maxWidth: 520),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
+
+  Widget _detail(String label, String value, {double maxWidth = 260}) => SizedBox(
+    width: maxWidth,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: Color(0xFF667085), fontSize: 12)),
+        const SizedBox(height: 3),
+        DetailValue(label: label, value: value),
+      ],
+    ),
+  );
 }
 
 class _PurchaseRequestLine {
