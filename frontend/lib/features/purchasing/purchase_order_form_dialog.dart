@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
 import '../../shared/searchable_select_field.dart';
+import '../../shared/select_option_labels.dart';
 import '../../shared/units.dart';
 import 'purchase_order_models.dart';
 
@@ -554,8 +555,7 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
                         .map(
                           (product) => SearchableSelectOption(
                             value: product['code'].toString(),
-                            label:
-                                '${product['code']} — ${product['description']}',
+                            label: productSelectLabel(product),
                             searchTerms: [
                               product['code'].toString(),
                               product['description']?.toString() ?? '',

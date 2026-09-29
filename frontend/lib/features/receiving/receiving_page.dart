@@ -7,6 +7,7 @@ import '../../shared/mobile_product_scanner.dart';
 import '../../shared/modal_widgets.dart';
 import '../../shared/module_navigation.dart';
 import '../../shared/searchable_select_field.dart';
+import '../../shared/select_option_labels.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
 import '../master_data/master_data_page.dart';
@@ -429,7 +430,7 @@ class _ReceivingPageState extends State<ReceivingPage> {
                         ..._products.map(
                           (item) => SearchableSelectOption(
                             value: item['code'].toString(),
-                            label: item['part_name'].toString(),
+                            label: productSelectLabel(item),
                             searchTerms: [
                               item['code'].toString(),
                               item['part_name']?.toString() ?? '',

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
 import '../../shared/mobile_product_scanner.dart';
 import '../../shared/searchable_select_field.dart';
+import '../../shared/select_option_labels.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
 
@@ -509,8 +510,11 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
                       .map(
                         (item) => SearchableSelectOption(
                           value: item['item_id'] as int,
-                          label:
-                              '${item['document_number']} — ${item['product_description']} — ${formatQuantity(item['outstanding_quantity'], item['unit'].toString())} ${unitLabel(item['unit'].toString())}',
+                          label: orderItemSelectLabel(
+                            item,
+                            quantity:
+                                '${formatQuantity(item['outstanding_quantity'], item['unit'].toString())} ${unitLabel(item['unit'].toString())}',
+                          ),
                           searchTerms: [
                             item['document_number']?.toString() ?? '',
                             item['product_code']?.toString() ?? '',
@@ -588,8 +592,7 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
                       .map(
                         (item) => SearchableSelectOption(
                           value: item['code'].toString(),
-                          label:
-                              '${item['storage_name'] ?? 'Storage'} — ${item['name']}',
+                          label: storageLocationSelectLabel(item),
                           searchTerms: [
                             item['code'].toString(),
                             item['storage_name']?.toString() ?? '',
@@ -646,7 +649,7 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
                         .map(
                           (item) => SearchableSelectOption(
                             value: item['code'].toString(),
-                            label: item['vehicle_number'].toString(),
+                            label: transportationSelectLabel(item),
                             searchTerms: [
                               item['code'].toString(),
                               item['vehicle_number']?.toString() ?? '',

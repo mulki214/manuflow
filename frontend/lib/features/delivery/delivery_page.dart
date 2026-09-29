@@ -6,6 +6,7 @@ import '../../shared/app_module_scaffold.dart';
 import '../../shared/app_sidebar.dart' show AppModule;
 import '../../shared/mobile_product_scanner.dart';
 import '../../shared/searchable_select_field.dart';
+import '../../shared/select_option_labels.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
 
@@ -653,8 +654,7 @@ class _DeliveryFormDialogState extends State<DeliveryFormDialog> {
                         .map(
                           (item) => SearchableSelectOption(
                             value: item['code'].toString(),
-                            label:
-                                '${item['vehicle_number']} — ${item['vehicle_type']}',
+                            label: transportationSelectLabel(item),
                             searchTerms: [
                               item['code'].toString(),
                               item['vehicle_number']?.toString() ?? '',
@@ -778,8 +778,11 @@ class _DeliveryLineEditor extends StatelessWidget {
                 .map(
                   (lot) => SearchableSelectOption(
                     value: lot,
-                    label:
-                        'Lot ${lot['lot_number']} — ${formatQuantity(lot['quantity'], lot['unit'].toString())} ${unitLabel(lot['unit'].toString())}',
+                    label: lotSelectLabel(
+                      lot,
+                      quantity:
+                          '${formatQuantity(lot['quantity'], lot['unit'].toString())} ${unitLabel(lot['unit'].toString())}',
+                    ),
                     searchTerms: [
                       lot['lot_number']?.toString() ?? '',
                       lot['product_code']?.toString() ?? '',

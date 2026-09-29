@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
 import '../../shared/mobile_product_scanner.dart';
 import '../../shared/searchable_select_field.dart';
+import '../../shared/select_option_labels.dart';
 import '../../shared/units.dart';
 import '../production/production_models.dart';
 import 'warehouse_models.dart';
@@ -213,8 +214,7 @@ class _WarehouseTransferFormDialogState
                           .map(
                             (lot) => SearchableSelectOption(
                               value: lot.id,
-                              label:
-                                  '${lot.productCode} — ${lot.description} — Lot ${lot.lotNumber} — ${_number(lot.quantity)} ${unitLabel(lot.unit)}',
+                              label: _lotLabel(lot),
                               searchTerms: [
                                 lot.productCode,
                                 lot.description,
@@ -342,8 +342,7 @@ class _WarehouseTransferFormDialogState
                             .map(
                               (item) => SearchableSelectOption(
                                 value: item['code'].toString(),
-                                label:
-                                    '${item['storage_name']} — ${item['name']}',
+                                label: storageLocationSelectLabel(item),
                                 searchTerms: [
                                   item['code'].toString(),
                                   item['storage_name']?.toString() ?? '',
@@ -426,4 +425,12 @@ class _WarehouseTransferFormDialogState
   String _number(double value) => value == value.truncateToDouble()
       ? value.toInt().toString()
       : value.toString();
+
+  String _lotLabel(WarehouseStockLot lot) => [
+    lot.productCode,
+    lot.productName,
+    lot.description,
+    'Lot ${lot.lotNumber}',
+    '${_number(lot.quantity)} ${unitLabel(lot.unit)}',
+  ].where((value) => value.trim().isNotEmpty).toSet().join(' — ');
 }

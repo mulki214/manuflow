@@ -88,24 +88,27 @@ async def production_stock(
 ) -> list[dict]:
     await current_access(db, current_user)
     query = (
-        select(ProductLot)
+        select(ProductLot, Product)
+        .join(Product, Product.code == ProductLot.product_code)
         .where(ProductLot.current_quantity_grams > 0)
         .order_by(ProductLot.product_code, ProductLot.lot_number)
     )
     if product_code:
         query = query.where(ProductLot.product_code == product_code)
-    records = list((await db.execute(query)).scalars())
+    records = list((await db.execute(query)).all())
     return [
         {
-            "lot_id": row.id,
-            "product_code": row.product_code,
-            "lot_number": row.lot_number,
-            "plant_code": row.plant_code,
-            "storage_location_code": row.storage_location_code,
-            "quantity": row.current_quantity_grams,
-            "unit": row.unit,
+            "lot_id": lot.id,
+            "product_code": lot.product_code,
+            "product_name": product.part_name,
+            "description": product.description,
+            "lot_number": lot.lot_number,
+            "plant_code": lot.plant_code,
+            "storage_location_code": lot.storage_location_code,
+            "quantity": lot.current_quantity_grams,
+            "unit": lot.unit,
         }
-        for row in records
+        for lot, product in records
     ]
 
 

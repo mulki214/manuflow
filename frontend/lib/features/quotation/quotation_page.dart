@@ -6,6 +6,7 @@ import '../../shared/app_module_scaffold.dart';
 import '../../shared/app_sidebar.dart' show AppModule;
 import '../../shared/modal_widgets.dart';
 import '../../shared/searchable_select_field.dart';
+import '../../shared/select_option_labels.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
 
@@ -410,8 +411,7 @@ class _QuotationPageState extends State<QuotationPage> {
                 .map(
                   (product) => SearchableSelectOption(
                     value: product['code'].toString(),
-                    label:
-                        '${product['part_name']} - ${product['description']}',
+                    label: productSelectLabel(product),
                     searchTerms: [
                       product['code'].toString(),
                       product['part_name']?.toString() ?? '',

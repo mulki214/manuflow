@@ -710,7 +710,8 @@ async def delivery_finish_good_lots(
     rows = list(
         (
             await db.execute(
-                select(ProductLot, StorageLocation)
+                select(ProductLot, Product, StorageLocation)
+                .join(Product, Product.code == ProductLot.product_code)
                 .join(StorageLocation, StorageLocation.code == ProductLot.storage_location_code)
                 .join(WarehouseStorage, WarehouseStorage.code == StorageLocation.storage_code)
                 .where(
@@ -726,6 +727,9 @@ async def delivery_finish_good_lots(
     return [
         {
             "id": lot.id,
+            "product_code": product.code,
+            "product_name": product.part_name,
+            "description": product.description,
             "lot_number": lot.lot_number,
             "quantity": display_quantity(lot.current_quantity_grams, unit),
             "unit": unit,
@@ -733,7 +737,7 @@ async def delivery_finish_good_lots(
             "storage_location_code": lot.storage_location_code,
             "storage_location_name": location.name,
         }
-        for lot, location in rows
+        for lot, product, location in rows
     ]
 
 

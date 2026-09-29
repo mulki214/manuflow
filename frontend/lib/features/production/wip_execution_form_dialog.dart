@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
 import '../../shared/units.dart';
 import '../../shared/searchable_select_field.dart';
+import '../../shared/select_option_labels.dart';
 import 'production_models.dart';
 
 class WipExecutionFormDialog extends StatefulWidget {
@@ -643,8 +644,7 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
                             .map(
                               (item) => SearchableSelectOption(
                                 value: item['code'].toString(),
-                                label:
-                                    '${item['code']} — ${item['description']}',
+                                label: productSelectLabel(item),
                                 searchTerms: [
                                   item['code'].toString(),
                                   item['description']?.toString() ?? '',

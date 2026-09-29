@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
 import '../../shared/units.dart';
 import '../../shared/searchable_select_field.dart';
+import '../../shared/select_option_labels.dart';
 
 class ConsumableDispositionDialog extends StatefulWidget {
   const ConsumableDispositionDialog({
@@ -137,8 +138,11 @@ class _ConsumableDispositionDialogState
                         .map(
                           (lot) => SearchableSelectOption(
                             value: lot['lot_id'] as int,
-                            label:
-                                '${lot['product_code']} — Lot ${lot['lot_number']} — ${formatQuantity(lot['quantity'], lot['unit'].toString())} ${unitLabel(lot['unit'].toString())}',
+                            label: lotSelectLabel(
+                              lot,
+                              quantity:
+                                  '${formatQuantity(lot['quantity'], lot['unit'].toString())} ${unitLabel(lot['unit'].toString())}',
+                            ),
                             searchTerms: [
                               lot['product_code']?.toString() ?? '',
                               lot['lot_number']?.toString() ?? '',

@@ -7,6 +7,7 @@ import '../../shared/app_sidebar.dart';
 import '../../shared/modal_widgets.dart';
 import '../../shared/product_qr_label_dialog.dart';
 import '../../shared/searchable_select_field.dart';
+import '../../shared/select_option_labels.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
 
@@ -941,7 +942,7 @@ class _PurchaseRequestLineFields extends StatelessWidget {
                 .map(
                   (product) => SearchableSelectOption(
                     value: product['code'].toString(),
-                    label: '${product['code']} — ${product['description']}',
+                    label: productSelectLabel(product),
                     searchTerms: [
                       product['code'].toString(),
                       product['description']?.toString() ?? '',
