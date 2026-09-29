@@ -5,6 +5,7 @@ import '../../core/api_client.dart';
 import '../../shared/app_module_scaffold.dart';
 import '../../shared/app_sidebar.dart';
 import '../../shared/modal_widgets.dart';
+import '../../shared/product_qr_label_dialog.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
 
@@ -649,6 +650,7 @@ class _PurchaseRequestDetailDialog extends StatelessWidget {
               const SizedBox(height: 8),
               ModalHorizontalScroll(
                 child: DataTable(
+                  headingRowColor: const WidgetStatePropertyAll(Colors.white),
                   columns: const [
                     DataColumn(label: Text('Product')),
                     DataColumn(label: Text('Part No')),
@@ -677,6 +679,24 @@ class _PurchaseRequestDetailDialog extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               _detail('Notes', _text(request['notes']), maxWidth: 800),
+              const Divider(height: 30),
+              Wrap(
+                spacing: 28,
+                runSpacing: 14,
+                children: [
+                  _qrSignature(
+                    'Requested By',
+                    _text(request['created_by_name']),
+                    _text(request['creator_qr_payload']),
+                  ),
+                  if (_text(request['review_qr_payload']) != '-')
+                    _qrSignature(
+                      status == 'rejected' ? 'Rejected By' : 'Approved By',
+                      _text(request['reviewed_by_name']),
+                      _text(request['review_qr_payload']),
+                    ),
+                ],
+              ),
               if (request['reviewed_by'] != null) ...[
                 const Divider(height: 30),
                 Text('Review', style: Theme.of(context).textTheme.titleMedium),
@@ -713,6 +733,20 @@ class _PurchaseRequestDetailDialog extends StatelessWidget {
         Text(label, style: const TextStyle(color: Color(0xFF667085), fontSize: 12)),
         const SizedBox(height: 3),
         DetailValue(label: label, value: value),
+      ],
+    ),
+  );
+
+  Widget _qrSignature(String label, String name, String payload) => SizedBox(
+    width: 150,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: Color(0xFF667085))),
+        const SizedBox(height: 6),
+        QrPayloadImage(data: payload, size: 96),
+        const SizedBox(height: 4),
+        Text(name, style: const TextStyle(fontWeight: FontWeight.w700)),
       ],
     ),
   );
