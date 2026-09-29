@@ -50,10 +50,14 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
   bool _saving = false;
   String? _error;
 
+  List<Map<String, dynamic>> get _availableSourceItems => _sourceItems
+      .where((item) => _hasOutstandingQuantity(item['outstanding_quantity']))
+      .toList();
+
   List<Map<String, dynamic>> get _visibleSourceItems =>
       widget.scannedItems.isEmpty
-      ? _sourceItems
-      : _sourceItems
+      ? _availableSourceItems
+      : _availableSourceItems
             .where(
               (item) => widget.scannedItems.any(
                 (scan) => scan.productCode == item['product_code'],
@@ -61,10 +65,15 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
             )
             .toList();
 
+  bool _hasOutstandingQuantity(dynamic value) {
+    final parsed = num.tryParse(value?.toString() ?? '');
+    return parsed != null && parsed > 0;
+  }
+
   void _applyScannedItemIfUnambiguous() {
     if (_sourceItemId != null || widget.scannedItems.length != 1) return;
     final scan = widget.scannedItems.single;
-    final matches = _sourceItems
+    final matches = _visibleSourceItems
         .where((item) => item['product_code'] == scan.productCode)
         .toList();
     if (matches.length != 1) return;
@@ -209,6 +218,16 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
           _sourceItems = List<Map<String, dynamic>>.from(
             response['items'] as List? ?? const [],
           );
+          if (_sourceItemId != null &&
+              !_visibleSourceItems.any(
+                (item) => item['item_id'] == _sourceItemId,
+              )) {
+            _sourceItemId = null;
+            _description = '-';
+            _documentNumber = '-';
+            _unit = '-';
+            _outstanding = '-';
+          }
         });
         _applyScannedItemIfUnambiguous();
       }
@@ -506,6 +525,16 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
                   validator: (value) => value == null ? 'Required' : null,
                 ),
               ),
+              if (_supplierCode != null &&
+                  _supplySource == 'external_supplier' &&
+                  _visibleSourceItems.isEmpty)
+                const SizedBox(
+                  width: 584,
+                  child: Text(
+                    'No outstanding items are available for this source.',
+                    style: TextStyle(color: Color(0xFF667085)),
+                  ),
+                ),
               SizedBox(
                 width: 584,
                 child: InputDecorator(

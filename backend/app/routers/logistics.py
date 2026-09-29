@@ -146,7 +146,14 @@ async def finish_queue(
 ) -> list[dict]:
     await warehouse_access(db, current_user)
     jobs = list(
-        (await db.execute(select(WipLotJob).where(WipLotJob.status == WipLotStatus.awaiting_finish_goods)))
+        (
+            await db.execute(
+                select(WipLotJob).where(
+                    WipLotJob.status == WipLotStatus.awaiting_finish_goods,
+                    WipLotJob.current_quantity > 0,
+                )
+            )
+        )
         .scalars()
         .all()
     )
