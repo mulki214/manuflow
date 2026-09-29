@@ -157,7 +157,6 @@ async def finish_queue(
                 .order_by(WipLotJob.created_at, WipLotJob.id)
             )
         )
-        .scalars()
         .all()
     )
     return [
