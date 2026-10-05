@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
 import '../../shared/units.dart';
+import '../../shared/searchable_select_field.dart';
 
 class ProductionSettingsDialog extends StatefulWidget {
   const ProductionSettingsDialog({super.key, required this.api});
@@ -340,19 +341,23 @@ class _ProductionSettingsDialogState extends State<ProductionSettingsDialog>
     List<Map<String, dynamic>> items,
     ValueChanged<String?> changed, {
     bool optional = false,
-  }) => DropdownButtonFormField<String>(
-    initialValue: value,
-    isExpanded: true,
-    decoration: InputDecoration(labelText: '$label${optional ? '' : ' *'}'),
-    items: [
-      if (optional) const DropdownMenuItem(value: null, child: Text('None')),
+  }) => SearchableSelectField<String?>(
+    value: value,
+    labelText: '$label${optional ? '' : ' *'}',
+    allowClear: optional,
+    searchHint: 'Search $label',
+    options: [
+      if (optional) const SearchableSelectOption(value: null, label: 'None'),
       ...items.map(
-        (item) => DropdownMenuItem(
+        (item) => SearchableSelectOption(
           value: item['code'].toString(),
-          child: Text(
-            '${item['code']} — ${item['name'] ?? item['part_name']}',
-            overflow: TextOverflow.ellipsis,
-          ),
+          label: '${item['code']} — ${item['name'] ?? item['part_name']}',
+          searchTerms: [
+            item['code'].toString(),
+            item['name']?.toString() ?? '',
+            item['part_name']?.toString() ?? '',
+            item['description']?.toString() ?? '',
+          ],
         ),
       ),
     ],

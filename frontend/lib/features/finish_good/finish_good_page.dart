@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
 import '../../shared/app_module_scaffold.dart';
+import '../../shared/searchable_select_field.dart';
 import '../../shared/app_sidebar.dart' show AppModule;
 import '../../shared/product_qr_label_dialog.dart';
 import '../../shared/units.dart';
@@ -92,20 +93,22 @@ class _FinishGoodPageState extends State<FinishGoodPage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '${job['product_code']} • Lot ${job['lot_number']} • '
-                  '${formatQuantity(job['quantity'], job['unit'].toString())} ${unitLabel(job['unit'].toString())}',
-                ),
+                Text(_queueLotLabel(job)),
                 const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(
-                    labelText: 'Finished Goods Location *',
-                  ),
-                  items: locations
+                SearchableSelectField<String>(
+                  value: locationCode,
+                  labelText: 'Finished Goods Location *',
+                  searchHint: 'Search finished goods location',
+                  options: locations
                       .map(
-                        (item) => DropdownMenuItem(
+                        (item) => SearchableSelectOption(
                           value: item['code'].toString(),
-                          child: Text('${item['code']} — ${item['name']}'),
+                          label: '${item['code']} — ${item['name']}',
+                          searchTerms: [
+                            item['code'].toString(),
+                            item['name']?.toString() ?? '',
+                            item['storage_name']?.toString() ?? '',
+                          ],
                         ),
                       )
                       .toList(),
@@ -283,64 +286,11 @@ class _FinishGoodPageState extends State<FinishGoodPage> {
                         itemBuilder: (_, index) {
                           final item = items[index];
                           final title = _tab == 'queue'
-                              ? '${item['product_code']} — Lot ${item['lot_number']}'
+                              ? _queueLotLabel(item)
                               : _tab == 'history'
                               ? item['receipt_number'].toString()
                               : '${item['product_code']} — ${item['product_name']} — Lot ${item['lot_number']}';
-                          return Card(
-                            child: ListTile(
-                              title: Text(title),
-                              subtitle: Text(
-                                'Qty ${formatQuantity(item['quantity'], item['unit'].toString())} ${unitLabel(item['unit'].toString())} • '
-                                'Plant ${item['plant_code']}'
-                                '${_tab == 'stock' ? ' • ${item['storage_name']} — ${item['storage_location_name']}' : ''}',
-                              ),
-                              trailing: _tab == 'stock'
-                                  ? IconButton(
-                                      tooltip: 'Download lot QR',
-                                      icon: const Icon(
-                                        Icons.qr_code_2_outlined,
-                                      ),
-                                      onPressed: () =>
-                                          Navigator.of(context).push(
-                                            MaterialPageRoute<void>(
-                                              builder: (_) =>
-                                                  ProductQrLabelPage(
-                                                    productCode:
-                                                        item['product_code']
-                                                            .toString(),
-                                                    productName:
-                                                        item['product_name']
-                                                            .toString(),
-                                                    lotId:
-                                                        item['lot_id'] as int?,
-                                                    lotNumber:
-                                                        item['lot_number']
-                                                            .toString(),
-                                                  ),
-                                            ),
-                                          ),
-                                    )
-                                  : _tab == 'queue'
-                                  ? FilledButton(
-                                      onPressed: () => _post(item),
-                                      child: const Text('Post'),
-                                    )
-                                  : _tab == 'history' &&
-                                        item['can_reverse'] == true
-                                  ? OutlinedButton(
-                                      onPressed: () => _reverse(item),
-                                      child: const Text('Reverse'),
-                                    )
-                                  : _tab == 'history'
-                                  ? Chip(
-                                      label: Text(
-                                        item['status'].toString().toUpperCase(),
-                                      ),
-                                    )
-                                  : null,
-                            ),
-                          );
+                          return _lotCard(item, title);
                         },
                       ),
               ),
@@ -349,5 +299,90 @@ class _FinishGoodPageState extends State<FinishGoodPage> {
         ),
       ),
     );
+  }
+
+  String _queueLotLabel(Map<String, dynamic> item) => [
+    item['product_code'],
+    item['product_name'],
+    item['description'],
+    'Lot ${item['lot_number']}',
+  ].where((value) => value?.toString().trim().isNotEmpty == true).join(' — ');
+
+  Widget _lotCard(Map<String, dynamic> item, String title) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final action = _lotAction(item);
+          final details = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 4),
+              Text(
+                'Qty ${formatQuantity(item['quantity'], item['unit'].toString())} ${unitLabel(item['unit'].toString())} • '
+                'Plant ${item['plant_code']}${item['plant_name'] == null ? '' : ' — ${item['plant_name']}'}'
+                '${_tab == 'stock' ? ' • ${item['storage_name']} — ${item['storage_location_name']}' : ''}',
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Color(0xFF667085)),
+              ),
+            ],
+          );
+          return constraints.maxWidth < 520
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    details,
+                    if (action != null) ...[
+                      const SizedBox(height: 12),
+                      Align(alignment: Alignment.centerRight, child: action),
+                    ],
+                  ],
+                )
+              : Row(
+                  children: [
+                    Expanded(child: details),
+                    if (action != null) ...[const SizedBox(width: 12), action],
+                  ],
+                );
+        },
+      ),
+    ),
+  );
+
+  Widget? _lotAction(Map<String, dynamic> item) {
+    if (_tab == 'stock') {
+      return IconButton(
+        tooltip: 'Download lot QR',
+        icon: const Icon(Icons.qr_code_2_outlined),
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ProductQrLabelPage(
+              productCode: item['product_code'].toString(),
+              productName: item['product_name'].toString(),
+              lotId: item['lot_id'] as int?,
+              lotNumber: item['lot_number'].toString(),
+            ),
+          ),
+        ),
+      );
+    }
+    if (_tab == 'queue') {
+      return FilledButton(
+        onPressed: () => _post(item),
+        child: const Text('Post'),
+      );
+    }
+    if (_tab == 'history' && item['can_reverse'] == true) {
+      return OutlinedButton(
+        onPressed: () => _reverse(item),
+        child: const Text('Reverse'),
+      );
+    }
+    if (_tab == 'history') {
+      return Chip(label: Text(item['status'].toString().toUpperCase()));
+    }
+    return null;
   }
 }

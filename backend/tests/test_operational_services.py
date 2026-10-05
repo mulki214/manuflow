@@ -9,6 +9,7 @@ from app.operational_services import (
     inventory_unit,
     ng_limit_exceeded,
     shipment_weight_kg,
+    target_outcome_quantity,
     to_grams,
     to_inventory_quantity,
 )
@@ -42,6 +43,12 @@ def test_cycle_time_excludes_break_and_uses_good_output() -> None:
     started = datetime(2026, 9, 3, 8, tzinfo=timezone.utc)
     ended = datetime(2026, 9, 3, 9, tzinfo=timezone.utc)
     assert actual_cycle_time_seconds(started, ended, 10, Decimal("100")) == Decimal("30.000")
+
+
+def test_target_outcome_excludes_break_and_applies_productivity() -> None:
+    started = datetime(2026, 9, 3, 8, tzinfo=timezone.utc)
+    ended = datetime(2026, 9, 3, 17, tzinfo=timezone.utc)
+    assert target_outcome_quantity(started, ended, 60, Decimal("120"), Decimal("95")) == Decimal("228")
 
 
 def test_ng_limit_supports_quantity_and_percentage() -> None:
