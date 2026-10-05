@@ -14,6 +14,7 @@ from app.routers import (
     purchase_requests,
     quotations,
     quality,
+    qr_labels,
     receiving,
     sales_orders,
     settings as settings_router,
@@ -46,6 +47,7 @@ app.include_router(receiving.router, prefix=settings.api_prefix)
 app.include_router(warehouse.router, prefix=settings.api_prefix)
 app.include_router(production.router, prefix=settings.api_prefix)
 app.include_router(quality.router, prefix=settings.api_prefix)
+app.include_router(qr_labels.router, prefix=settings.api_prefix)
 app.include_router(logistics.finish_router, prefix=settings.api_prefix)
 app.include_router(logistics.delivery_router, prefix=settings.api_prefix)
 app.include_router(analytics.dashboard_router, prefix=settings.api_prefix)

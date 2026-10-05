@@ -46,6 +46,13 @@ class PurchaseOrderStatus(str, enum.Enum):
 class PurchaseRequestStatus(str, enum.Enum):
     waiting_review = "waiting_review"
     approved = "approved"
+    partially_approved = "partially_approved"
+    rejected = "rejected"
+
+
+class PurchaseRequestItemApprovalStatus(str, enum.Enum):
+    pending = "pending"
+    approved = "approved"
     rejected = "rejected"
 
 
@@ -345,6 +352,9 @@ class Product(Base):
     gross_weight: Mapped[Decimal] = mapped_column(Numeric(14, 3), nullable=False)
     nett_weight: Mapped[Decimal] = mapped_column(Numeric(14, 3), nullable=False)
     default_cycle_time_seconds: Mapped[Decimal | None] = mapped_column(Numeric(14, 3), nullable=True)
+    productivity_percentage: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=Decimal("95")
+    )
     current_stock_grams: Mapped[Decimal] = mapped_column(Numeric(20, 3), nullable=False, default=0)
     category: Mapped[ProductCategory] = mapped_column(
         Enum(ProductCategory, name="product_category_enum"),
@@ -574,6 +584,14 @@ class PurchaseRequestItem(Base):
     purchase_order_number: Mapped[str | None] = mapped_column(
         ForeignKey("purchase_orders.po_number", ondelete="SET NULL"), nullable=True, index=True
     )
+    approval_status: Mapped[PurchaseRequestItemApprovalStatus] = mapped_column(
+        Enum(PurchaseRequestItemApprovalStatus, name="purchase_request_item_approval_status_enum"),
+        nullable=False, default=PurchaseRequestItemApprovalStatus.pending, index=True,
+    )
+    approved_quantity: Mapped[Decimal | None] = mapped_column(Numeric(14, 3), nullable=True)
+    review_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     purchase_request: Mapped[PurchaseRequest] = relationship(back_populates="items")
 
 
@@ -1010,6 +1028,8 @@ class ProductionExecution(Base):
     observed_cycle_time_seconds: Mapped[Decimal | None] = mapped_column(Numeric(14, 3), nullable=True)
     target_cycle_time_seconds: Mapped[Decimal | None] = mapped_column(Numeric(14, 3), nullable=True)
     target_finish_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    target_productivity_percentage: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    target_outcome_quantity: Mapped[Decimal | None] = mapped_column(Numeric(20, 3), nullable=True)
     job_id: Mapped[int] = mapped_column(ForeignKey("wip_lot_jobs.id", ondelete="RESTRICT"), nullable=False, index=True)
     product_code: Mapped[str] = mapped_column(ForeignKey("products.code", ondelete="RESTRICT"), nullable=False)
     product_name: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -1060,6 +1080,19 @@ class DailyProductionSequence(Base):
 
     sequence_date: Mapped[date] = mapped_column(Date, primary_key=True)
     last_value: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class QrLabel(Base):
+    __tablename__ = "qr_labels"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    label_name: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
+    template: Mapped[str] = mapped_column(Text, nullable=False)
+    resolved_text: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    created_by_name: Mapped[str] = mapped_column(String(201), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
 class DailyQualitySequence(Base):

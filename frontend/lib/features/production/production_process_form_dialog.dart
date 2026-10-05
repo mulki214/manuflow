@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
+import '../../shared/searchable_select_field.dart';
 import 'production_models.dart';
 
 class ProductionProcessFormDialog extends StatefulWidget {
@@ -162,14 +163,19 @@ class _ProductionProcessFormDialogState
                           setState(() => _type = value ?? 'production'),
                     ),
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: _plantCode,
-                      decoration: const InputDecoration(labelText: 'Plant *'),
-                      items: _plants
+                    SearchableSelectField<String>(
+                      value: _plantCode,
+                      labelText: 'Plant *',
+                      searchHint: 'Search plant',
+                      options: _plants
                           .map(
-                            (item) => DropdownMenuItem(
+                            (item) => SearchableSelectOption(
                               value: item['code'].toString(),
-                              child: Text('${item['code']} — ${item['name']}'),
+                              label: '${item['code']} — ${item['name']}',
+                              searchTerms: [
+                                item['code'].toString(),
+                                item['name']?.toString() ?? '',
+                              ],
                             ),
                           )
                           .toList(),

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
+import '../../shared/searchable_select_field.dart';
+import '../../shared/select_option_labels.dart';
 import '../../shared/units.dart';
 import 'sales_order_models.dart';
 
@@ -329,18 +331,19 @@ class _SalesOrderFormDialogState extends State<SalesOrderFormDialog> {
                 ),
               ),
               _box(
-                DropdownButtonFormField<String>(
-                  initialValue: _customerCode,
-                  decoration: const InputDecoration(labelText: 'Customer *'),
-                  isExpanded: true,
-                  items: _customers
+                SearchableSelectField<String>(
+                  value: _customerCode,
+                  labelText: 'Customer *',
+                  searchHint: 'Search customer',
+                  options: _customers
                       .map(
-                        (customer) => DropdownMenuItem(
+                        (customer) => SearchableSelectOption(
                           value: customer['code'].toString(),
-                          child: Text(
-                            '${customer['code']} — ${customer['name']}',
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                          label: '${customer['code']} — ${customer['name']}',
+                          searchTerms: [
+                            customer['code'].toString(),
+                            customer['name']?.toString() ?? '',
+                          ],
                         ),
                       )
                       .toList(),
@@ -506,18 +509,21 @@ class _SalesOrderFormDialogState extends State<SalesOrderFormDialog> {
             children: [
               SizedBox(
                 width: 310,
-                child: DropdownButtonFormField<String>(
-                  initialValue: item.productCode,
-                  decoration: const InputDecoration(labelText: 'Product *'),
-                  isExpanded: true,
-                  items: _products
+                child: SearchableSelectField<String>(
+                  value: item.productCode,
+                  labelText: 'Product *',
+                  searchHint: 'Search product',
+                  options: _products
                       .map(
-                        (product) => DropdownMenuItem(
+                        (product) => SearchableSelectOption(
                           value: product['code'].toString(),
-                          child: Text(
-                            '${product['code']} — ${product['description']}',
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                          label: productSelectLabel(product),
+                          searchTerms: [
+                            product['code'].toString(),
+                            product['description']?.toString() ?? '',
+                            product['part_name']?.toString() ?? '',
+                            product['part_no']?.toString() ?? '',
+                          ],
                         ),
                       )
                       .toList(),

@@ -6,6 +6,7 @@ import '../../shared/crud_widgets.dart';
 import '../../shared/mobile_product_scanner.dart';
 import '../../shared/modal_widgets.dart';
 import '../../shared/module_navigation.dart';
+import '../../shared/searchable_select_field.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
 import '../master_data/master_data_page.dart';
@@ -707,15 +708,18 @@ class _WipProductionPageState extends State<WipProductionPage> {
     ValueChanged<String?> onChanged,
   ) => SizedBox(
     width: 200,
-    child: DropdownButtonFormField<String?>(
-      initialValue: selected,
-      decoration: InputDecoration(labelText: label, isDense: true),
-      items: [
-        const DropdownMenuItem(value: null, child: Text('All')),
+    child: SearchableSelectField<String?>(
+      value: selected,
+      labelText: label,
+      allowClear: true,
+      searchHint: 'Search $label',
+      options: [
+        const SearchableSelectOption(value: null, label: 'All'),
         ...values.map(
-          (item) => DropdownMenuItem(
+          (item) => SearchableSelectOption(
             value: item.key,
-            child: Text(item.value, overflow: TextOverflow.ellipsis),
+            label: item.value,
+            searchTerms: [item.key, item.value],
           ),
         ),
       ],
@@ -955,6 +959,19 @@ class _WipProductionPageState extends State<WipProductionPage> {
                   item.observedCycleTimeSeconds == null
                       ? '-'
                       : '${_number(item.observedCycleTimeSeconds!)} seconds',
+                ),
+                _detail(
+                  'Target Outcome',
+                  item.targetOutcomeQuantity == null
+                      ? '-'
+                      : '${formatQuantity(item.targetOutcomeQuantity!, item.outputUnit)} ${unitLabel(item.outputUnit)}'
+                            '${item.targetProductivityPercentage == null ? '' : ' (${_number(item.targetProductivityPercentage!)}%)'}',
+                ),
+                _detail(
+                  'Outcome Achievement',
+                  item.outcomeAchievementPercentage == null
+                      ? '-'
+                      : '${_number(item.outcomeAchievementPercentage!)}%',
                 ),
                 _detail(
                   'NG Control',

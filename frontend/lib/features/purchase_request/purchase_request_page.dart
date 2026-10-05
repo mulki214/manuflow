@@ -4,6 +4,10 @@ import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
 import '../../shared/app_module_scaffold.dart';
 import '../../shared/app_sidebar.dart';
+import '../../shared/modal_widgets.dart';
+import '../../shared/product_qr_label_dialog.dart';
+import '../../shared/searchable_select_field.dart';
+import '../../shared/select_option_labels.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
 
@@ -90,53 +94,6 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
     return code;
   }
 
-  Future<void> _refreshPlants() async {
-    try {
-      final response = await widget.auth.api.getJson(
-        '/master-data/plants?page=1&size=100',
-      );
-      if (mounted) {
-        setState(() {
-          _plants = (response['items'] as List).cast<Map<String, dynamic>>();
-        });
-      }
-    } on ApiException catch (exception) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Unable to load Receiving Plants: ${exception.message}',
-            ),
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _refreshProducts() async {
-    try {
-      final response = await widget.auth.api.getJson(
-        '/master-data/products?page=1&size=100',
-      );
-      if (mounted) {
-        setState(() {
-          _products = (response['items'] as List)
-              .cast<Map<String, dynamic>>()
-              .where((product) => product['is_active'] != false)
-              .toList();
-        });
-      }
-    } on ApiException catch (exception) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Unable to load Products: ${exception.message}'),
-          ),
-        );
-      }
-    }
-  }
-
   Future<void> _review(Map<String, dynamic> pr, bool approve) async {
     String reason = '';
     if (!approve) {
@@ -171,6 +128,48 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
         approve ? {} : {'reason': reason.trim()},
       );
       await _load();
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
+
+  Future<void> _approvePartial(Map<String, dynamic> pr) async {
+    final lines = (pr['items'] as List)
+        .cast<Map<String, dynamic>>()
+        .map(_PurchaseRequestApprovalLine.fromJson)
+        .toList();
+    final reviewed = await showDialog<bool>(
+      context: context,
+      builder: (_) => _PurchaseRequestApprovalDialog(
+        requestNumber: pr['request_number'].toString(),
+        lines: lines,
+        onSubmit: (payload) => widget.auth.api.postJson(
+          '/purchase-requests/${Uri.encodeComponent(pr['request_number'].toString())}/approve',
+          payload,
+        ),
+      ),
+    );
+    if (reviewed == true) _load();
+  }
+
+  Future<void> _showDetail(Map<String, dynamic> summary) async {
+    final number = summary['request_number'].toString();
+    try {
+      final request = await widget.auth.api.getJson(
+        '/purchase-requests/${Uri.encodeComponent(number)}',
+      );
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => _PurchaseRequestDetailDialog(
+          request: request,
+          plantLabel: _plantLabel,
+        ),
+      );
     } on ApiException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -220,6 +219,7 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                         final p = _items[i];
                         return Card(
                           child: ListTile(
+                            onTap: () => _showDetail(p),
                             title: Text(
                               '${p['request_number']} — ${p['created_by_name']}',
                             ),
@@ -245,7 +245,7 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                                         _form(context, existing: p);
                                       }
                                       if (a == 'approve') {
-                                        _review(p, true);
+                                        _approvePartial(p);
                                       }
                                       if (a == 'reject') {
                                         _review(p, false);
@@ -319,71 +319,25 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () async {
-                      if (_plants.isEmpty) {
-                        await _refreshPlants();
-                      }
-                      if (!x.mounted) return;
-                      if (_plants.isEmpty) {
-                        ScaffoldMessenger.of(x).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'No Receiving Plant is available. Create a Plant in Master Data first.',
-                            ),
+                  SearchableSelectField<String>(
+                    value: plantCode,
+                    labelText: 'Receiving Plant *',
+                    searchHint: 'Search receiving plant',
+                    options: _plants
+                        .map(
+                          (plant) => SearchableSelectOption(
+                            value: plant['code'].toString(),
+                            label: '${plant['code']} — ${plant['name']}',
+                            searchTerms: [
+                              plant['code'].toString(),
+                              plant['name']?.toString() ?? '',
+                            ],
                           ),
-                        );
-                        return;
-                      }
-                      final selected = await showDialog<String>(
-                        context: x,
-                        builder: (pickerContext) => AlertDialog(
-                          title: const Text('Select Receiving Plant'),
-                          content: SizedBox(
-                            width: 420,
-                            child: ListView.builder(
-                              shrinkWrap: true,
-                              itemCount: _plants.length,
-                              itemBuilder: (_, index) {
-                                final plant = _plants[index];
-                                final code = plant['code'].toString();
-                                return ListTile(
-                                  title: Text(
-                                    '${plant['code']} — ${plant['name']}',
-                                  ),
-                                  trailing: code == plantCode
-                                      ? const Icon(Icons.check)
-                                      : null,
-                                  onTap: () =>
-                                      Navigator.pop(pickerContext, code),
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-                      );
-                      if (selected != null) {
-                        setDialogState(() => plantCode = selected);
-                      }
-                    },
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Receiving Plant *',
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              plantCode == null
-                                  ? 'Select Receiving Plant'
-                                  : _plantLabel(plantCode!),
-                            ),
-                          ),
-                          const Icon(Icons.arrow_drop_down),
-                        ],
-                      ),
-                    ),
+                        )
+                        .toList(),
+                    onChanged: (value) =>
+                        setDialogState(() => plantCode = value),
+                    validator: (value) => value == null ? 'Required' : null,
                   ),
                   const SizedBox(height: 8),
                   ListTile(
@@ -413,52 +367,9 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                       index: index,
                       line: lines[index],
                       products: _products,
-                      onSelectProduct: () async {
-                        if (_products.isEmpty) await _refreshProducts();
-                        if (!x.mounted) return;
-                        if (_products.isEmpty) {
-                          ScaffoldMessenger.of(x).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'No Product is available in Master Data.',
-                              ),
-                            ),
-                          );
-                          return;
-                        }
-                        final selected = await showDialog<String>(
-                          context: x,
-                          builder: (pickerContext) => AlertDialog(
-                            title: const Text('Select Product'),
-                            content: SizedBox(
-                              width: 520,
-                              child: ListView.builder(
-                                shrinkWrap: true,
-                                itemCount: _products.length,
-                                itemBuilder: (_, productIndex) {
-                                  final product = _products[productIndex];
-                                  final code = product['code'].toString();
-                                  return ListTile(
-                                    title: Text(
-                                      '${product['code']} — ${product['description']}',
-                                    ),
-                                    trailing: code == lines[index].productCode
-                                        ? const Icon(Icons.check)
-                                        : null,
-                                    onTap: () =>
-                                        Navigator.pop(pickerContext, code),
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
-                        );
-                        if (selected != null) {
-                          setDialogState(
-                            () => lines[index].productCode = selected,
-                          );
-                        }
-                      },
+                      onChanged: (value) => setDialogState(
+                        () => lines[index].productCode = value,
+                      ),
                       canRemove: lines.length > 1,
                       onRemove: () => setDialogState(() {
                         lines.removeAt(index).dispose();
@@ -561,6 +472,412 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
   }
 }
 
+class _PurchaseRequestApprovalLine {
+  _PurchaseRequestApprovalLine({
+    required this.itemId,
+    required this.productLabel,
+    required this.requestedQuantity,
+    required this.unit,
+  }) : approvedQuantity = TextEditingController(text: requestedQuantity),
+       reason = TextEditingController();
+
+  factory _PurchaseRequestApprovalLine.fromJson(Map<String, dynamic> json) =>
+      _PurchaseRequestApprovalLine(
+        itemId: json['id'] as int,
+        productLabel: '${json['product_code']} — ${json['description']}',
+        requestedQuantity: formatQuantity(
+          json['quantity'],
+          json['unit']?.toString() ?? 'pcs',
+        ),
+        unit: json['unit']?.toString() ?? 'pcs',
+      );
+
+  final int itemId;
+  final String productLabel;
+  final String requestedQuantity;
+  final String unit;
+  bool approved = true;
+  final TextEditingController approvedQuantity;
+  final TextEditingController reason;
+
+  void dispose() {
+    approvedQuantity.dispose();
+    reason.dispose();
+  }
+}
+
+class _PurchaseRequestApprovalDialog extends StatefulWidget {
+  const _PurchaseRequestApprovalDialog({
+    required this.requestNumber,
+    required this.lines,
+    required this.onSubmit,
+  });
+
+  final String requestNumber;
+  final List<_PurchaseRequestApprovalLine> lines;
+  final Future<void> Function(Map<String, dynamic> payload) onSubmit;
+
+  @override
+  State<_PurchaseRequestApprovalDialog> createState() =>
+      _PurchaseRequestApprovalDialogState();
+}
+
+class _PurchaseRequestApprovalDialogState
+    extends State<_PurchaseRequestApprovalDialog> {
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    for (final line in widget.lines) {
+      line.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    setState(() => _error = null);
+    for (final line in widget.lines) {
+      final quantity = double.tryParse(line.approvedQuantity.text.trim());
+      if (line.approved && (quantity == null || quantity <= 0)) {
+        setState(
+          () => _error = 'Enter an approved quantity for every selected item.',
+        );
+        return;
+      }
+      final changed =
+          line.approved &&
+          line.approvedQuantity.text.trim() != line.requestedQuantity;
+      if ((!line.approved || changed) && line.reason.text.trim().length < 3) {
+        setState(
+          () =>
+              _error = 'A reason is required for a rejected or adjusted item.',
+        );
+        return;
+      }
+    }
+    setState(() => _saving = true);
+    try {
+      await widget.onSubmit({
+        'items': widget.lines
+            .map(
+              (line) => {
+                'item_id': line.itemId,
+                'approved': line.approved,
+                'approved_quantity': line.approved
+                    ? line.approvedQuantity.text.trim()
+                    : '0',
+                'reason': line.reason.text.trim(),
+              },
+            )
+            .toList(),
+      });
+      if (mounted) Navigator.pop(context, true);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text('Review ${widget.requestNumber}'),
+    content: SizedBox(
+      width: 720,
+      child: ModalScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Select the items to approve. Adjusted or rejected items require a reason.',
+            ),
+            const SizedBox(height: 12),
+            ...widget.lines.map(
+              (line) => Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        value: line.approved,
+                        title: Text(line.productLabel),
+                        subtitle: Text(
+                          'Requested: ${line.requestedQuantity} ${line.unit}',
+                        ),
+                        onChanged: _saving
+                            ? null
+                            : (value) => setState(
+                                () => line.approved = value ?? false,
+                              ),
+                      ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: line.approvedQuantity,
+                              enabled: line.approved && !_saving,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              decoration: InputDecoration(
+                                labelText: 'Approved Quantity (${line.unit})',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextField(
+                              controller: line.reason,
+                              enabled: !_saving,
+                              decoration: const InputDecoration(
+                                labelText: 'Reason',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+          ],
+        ),
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: _saving ? null : () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        onPressed: _saving ? null : _submit,
+        child: Text(_saving ? 'Reviewing...' : 'Submit Review'),
+      ),
+    ],
+  );
+}
+
+class _PurchaseRequestDetailDialog extends StatelessWidget {
+  const _PurchaseRequestDetailDialog({
+    required this.request,
+    required this.plantLabel,
+  });
+
+  final Map<String, dynamic> request;
+  final String Function(String code) plantLabel;
+
+  String _text(Object? value) {
+    final result = value?.toString().trim() ?? '';
+    return result.isEmpty ? '-' : result;
+  }
+
+  String _quantity(Map<String, dynamic> item) =>
+      formatQuantity(item['quantity'], item['unit']?.toString() ?? 'pcs');
+
+  @override
+  Widget build(BuildContext context) {
+    final status = _text(request['status']).replaceAll('_', ' ');
+    final items = (request['items'] as List? ?? const [])
+        .cast<Map<String, dynamic>>();
+    final plantCode = _text(request['delivery_plant_code']);
+    return AlertDialog(
+      title: const Text('Purchase Request Detail'),
+      content: SizedBox(
+        width: 900,
+        child: ModalScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DetailValue(
+                label: 'Request Number',
+                value: _text(request['request_number']),
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 28,
+                runSpacing: 12,
+                children: [
+                  _detail('Status', status),
+                  _detail('Request Date', _text(request['request_date'])),
+                  _detail(
+                    'Expected Arrival Date',
+                    _text(request['requested_delivery_date']),
+                  ),
+                  _detail('Requested By', _text(request['created_by_name'])),
+                  _detail('Department Code', _text(request['department_code'])),
+                  _detail(
+                    'Receiving Plant',
+                    plantCode == '-' ? '-' : plantLabel(plantCode),
+                  ),
+                  if (request['reviewed_at'] != null)
+                    _detail('Reviewed At', _text(request['reviewed_at'])),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Requested Products',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              ModalHorizontalScroll(
+                child: DataTable(
+                  headingRowColor: const WidgetStatePropertyAll(Colors.white),
+                  columns: const [
+                    DataColumn(label: Text('Product')),
+                    DataColumn(label: Text('Part No')),
+                    DataColumn(label: Text('Description')),
+                    DataColumn(label: Text('Requested Qty'), numeric: true),
+                    DataColumn(label: Text('Approved Qty'), numeric: true),
+                    DataColumn(label: Text('Line Status')),
+                    DataColumn(label: Text('Review Reason')),
+                    DataColumn(label: Text('Remark')),
+                    DataColumn(label: Text('Generated PO')),
+                  ],
+                  rows: items
+                      .map(
+                        (item) => DataRow(
+                          cells: [
+                            DataCell(
+                              CopyableCodeText(_text(item['product_code'])),
+                            ),
+                            DataCell(SelectableText(_text(item['part_no']))),
+                            DataCell(
+                              SizedBox(
+                                width: 220,
+                                child: SelectableText(
+                                  _text(item['description']),
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              Text('${_quantity(item)} ${_text(item['unit'])}'),
+                            ),
+                            DataCell(
+                              Text(
+                                item['approved_quantity'] == null
+                                    ? '-'
+                                    : '${formatQuantity(item['approved_quantity'], item['unit']?.toString() ?? 'pcs')} ${_text(item['unit'])}',
+                              ),
+                            ),
+                            DataCell(
+                              Text(
+                                _text(
+                                  item['approval_status'],
+                                ).replaceAll('_', ' '),
+                              ),
+                            ),
+                            DataCell(
+                              SizedBox(
+                                width: 180,
+                                child: SelectableText(
+                                  _text(item['review_reason']),
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              SizedBox(
+                                width: 180,
+                                child: SelectableText(_text(item['remark'])),
+                              ),
+                            ),
+                            DataCell(
+                              CopyableCodeText(
+                                _text(item['purchase_order_number']),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              _detail('Notes', _text(request['notes']), maxWidth: 800),
+              const Divider(height: 30),
+              Wrap(
+                spacing: 28,
+                runSpacing: 14,
+                children: [
+                  _qrSignature(
+                    'Requested By',
+                    _text(request['created_by_name']),
+                    _text(request['creator_qr_payload']),
+                  ),
+                  if (_text(request['review_qr_payload']) != '-')
+                    _qrSignature(
+                      status == 'rejected' ? 'Rejected By' : 'Approved By',
+                      _text(request['reviewed_by_name']),
+                      _text(request['review_qr_payload']),
+                    ),
+                ],
+              ),
+              if (_text(request['rejection_reason']) != '-') ...[
+                const SizedBox(height: 16),
+                _detail(
+                  'Rejection Reason',
+                  _text(request['rejection_reason']),
+                  maxWidth: 520,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
+
+  Widget _detail(String label, String value, {double maxWidth = 260}) =>
+      SizedBox(
+        width: maxWidth,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(color: Color(0xFF667085), fontSize: 12),
+            ),
+            const SizedBox(height: 3),
+            DetailValue(label: label, value: value),
+          ],
+        ),
+      );
+
+  Widget _qrSignature(String label, String name, String payload) => SizedBox(
+    width: 150,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: Color(0xFF667085))),
+        const SizedBox(height: 6),
+        QrPayloadImage(data: payload, size: 96),
+        const SizedBox(height: 4),
+        Text(name, style: const TextStyle(fontWeight: FontWeight.w700)),
+      ],
+    ),
+  );
+}
+
 class _PurchaseRequestLine {
   String? productCode;
   final quantity = TextEditingController();
@@ -587,7 +904,7 @@ class _PurchaseRequestLineFields extends StatelessWidget {
     required this.index,
     required this.line,
     required this.products,
-    required this.onSelectProduct,
+    required this.onChanged,
     required this.canRemove,
     required this.onRemove,
   });
@@ -595,7 +912,7 @@ class _PurchaseRequestLineFields extends StatelessWidget {
   final int index;
   final _PurchaseRequestLine line;
   final List<Map<String, dynamic>> products;
-  final Future<void> Function() onSelectProduct;
+  final ValueChanged<String?> onChanged;
   final bool canRemove;
   final VoidCallback onRemove;
 
@@ -617,24 +934,26 @@ class _PurchaseRequestLineFields extends StatelessWidget {
                 ),
             ],
           ),
-          InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: onSelectProduct,
-            child: InputDecorator(
-              decoration: const InputDecoration(labelText: 'Product *'),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      line.productCode == null
-                          ? 'Product'
-                          : _productLabel(line.productCode!),
-                    ),
+          SearchableSelectField<String>(
+            value: line.productCode,
+            labelText: 'Product *',
+            searchHint: 'Search product',
+            options: products
+                .map(
+                  (product) => SearchableSelectOption(
+                    value: product['code'].toString(),
+                    label: productSelectLabel(product),
+                    searchTerms: [
+                      product['code'].toString(),
+                      product['description']?.toString() ?? '',
+                      product['part_name']?.toString() ?? '',
+                      product['part_no']?.toString() ?? '',
+                    ],
                   ),
-                  const Icon(Icons.arrow_drop_down),
-                ],
-              ),
-            ),
+                )
+                .toList(),
+            onChanged: onChanged,
+            validator: (value) => value == null ? 'Required' : null,
           ),
           Row(
             children: [
@@ -675,13 +994,4 @@ class _PurchaseRequestLineFields extends StatelessWidget {
       ),
     ),
   );
-
-  String _productLabel(String code) {
-    for (final product in products) {
-      if (product['code']?.toString() == code) {
-        return '${product['code']} — ${product['description']}';
-      }
-    }
-    return code;
-  }
 }

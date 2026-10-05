@@ -1,5 +1,5 @@
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_FLOOR
 
 WEIGHT_UNITS = {"gram", "kg", "ton"}
 DISCRETE_UNITS = {"pcs", "bar", "pail"}
@@ -74,6 +74,26 @@ def actual_cycle_time_seconds(
     if productive_seconds <= 0:
         raise ValueError("Break duration must be shorter than the production time range")
     return (productive_seconds / good_quantity).quantize(Decimal("0.001"))
+
+
+def target_outcome_quantity(
+    started_at: datetime | None,
+    ended_at: datetime | None,
+    break_duration_minutes: int,
+    cycle_time_seconds: Decimal | None,
+    productivity_percentage: Decimal,
+) -> Decimal | None:
+    """Return the conservative output target for an actual production window."""
+    if not started_at or not ended_at or not cycle_time_seconds or cycle_time_seconds <= 0:
+        return None
+    productive_seconds = Decimal(str((ended_at - started_at).total_seconds())) - Decimal(
+        break_duration_minutes * 60
+    )
+    if productive_seconds <= 0:
+        return None
+    return (
+        productive_seconds / cycle_time_seconds * productivity_percentage / Decimal("100")
+    ).to_integral_value(rounding=ROUND_FLOOR)
 
 
 def ng_limit_exceeded(
