@@ -1,9 +1,5 @@
-import 'dart:typed_data';
-import 'dart:ui' as ui;
-
 import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../core/api_client.dart';
 import '../../shared/app_module_scaffold.dart';
@@ -526,10 +522,7 @@ class _QrLabelFormState extends State<_QrLabelForm> {
               child: Container(
                 color: Colors.white,
                 padding: const EdgeInsets.all(12),
-                child: QrPayloadImage(
-                  data: 'MANUFLOW-LABEL|$_resolved',
-                  size: 180,
-                ),
+                child: QrPayloadImage(data: _resolved, size: 180),
               ),
             ),
           ],
@@ -563,16 +556,11 @@ class _QrLabelPreviewState extends State<_QrLabelPreview> {
   Future<void> _download() async {
     setState(() => _downloading = true);
     try {
-      final image = await QrPainter(
-        data: 'MANUFLOW-LABEL|${widget.text}',
-        version: QrVersions.auto,
-        gapless: false,
-      ).toImageData(768, format: ui.ImageByteFormat.png);
-      if (image == null) throw StateError('QR image could not be rendered');
+      final image = await opaqueQrPng(widget.text, 768);
       await FileSaver.instance.saveFile(
         name:
             'qr-label-${widget.name.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '-')}',
-        bytes: Uint8List.view(image.buffer),
+        bytes: image,
         fileExtension: 'png',
         mimeType: MimeType.png,
       );
@@ -601,10 +589,7 @@ class _QrLabelPreviewState extends State<_QrLabelPreview> {
           Container(
             color: Colors.white,
             padding: const EdgeInsets.all(12),
-            child: QrPayloadImage(
-              data: 'MANUFLOW-LABEL|${widget.text}',
-              size: 280,
-            ),
+            child: QrPayloadImage(data: widget.text, size: 280),
           ),
           const SizedBox(height: 18),
           FilledButton.icon(
