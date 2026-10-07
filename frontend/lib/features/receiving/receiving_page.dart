@@ -507,7 +507,7 @@ class _ReceivingPageState extends State<ReceivingPage> {
           DataColumn(label: Text('DATE')),
           DataColumn(label: Text('PRODUCT / DESCRIPTION')),
           DataColumn(label: Text('LOT')),
-          DataColumn(label: Text('QTY (GRAM)')),
+          DataColumn(label: Text('QTY')),
           DataColumn(label: Text('PLANT / LOCATION')),
           DataColumn(label: Text('SOURCE / DOCUMENT')),
           DataColumn(label: Text('PO / VEHICLE / DRIVER')),
