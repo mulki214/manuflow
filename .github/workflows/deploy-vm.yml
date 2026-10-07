@@ -1,0 +1,94 @@
+name: Deploy to VM
+
+on:
+  push:
+    branches:
+      - staging
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout pushed revision
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run backend tests
+        working-directory: backend
+        run: |
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+          pytest -q
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.35.7"
+          channel: stable
+
+      - name: Analyze and test frontend
+        working-directory: frontend
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: validate
+    steps:
+      - name: Checkout pushed revision
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          install -m 600 .github/vm_known_hosts ~/.ssh/known_hosts
+
+      - name: Package source
+        run: |
+          tar -czf "$RUNNER_TEMP/manuflow-source.tar.gz" \
+            --exclude=.git \
+            --exclude=.env \
+            --exclude='.env.*' \
+            --exclude=.venv \
+            --exclude=backend/.venv \
+            --exclude=frontend/.dart_tool \
+            --exclude=frontend/build \
+            --exclude='**/__pycache__' \
+            .
+
+      - name: Copy source and deploy
+        env:
+          REVISION: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          if [ "$BRANCH" = "staging" ]; then ENVIRONMENT=staging; else ENVIRONMENT=production; fi
+          scp "$RUNNER_TEMP/manuflow-source.tar.gz" "nstprod@103.93.134.27:/tmp/manuflow-${ENVIRONMENT}-${REVISION}.tar.gz"
+          scp deploy/vm/deploy.sh "nstprod@103.93.134.27:/tmp/manuflow-deploy.sh"
+          ssh nstprod@103.93.134.27 "mkdir -p /opt/manuflow/bin && install -m 700 /tmp/manuflow-deploy.sh /opt/manuflow/bin/deploy.sh && /opt/manuflow/bin/deploy.sh $ENVIRONMENT $REVISION /tmp/manuflow-${ENVIRONMENT}-${REVISION}.tar.gz"
+
+      - name: Verify public routes
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          if [ "$BRANCH" = "staging" ]; then WEB_HOST=erp; API_HOST=api; else WEB_HOST=ep; API_HOST=ap; fi
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 "https://${API_HOST}.103.93.134.27.nip.io/health"
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 "https://${WEB_HOST}.103.93.134.27.nip.io/" >/dev/null
