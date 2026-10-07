@@ -240,6 +240,7 @@ async def list_receiving_source_items(
             .join(Product, Product.code == SalesOrderMaterialAllocation.material_product_code)
             .where(
                 SalesOrder.status == SalesOrderStatus.approved,
+                SalesOrderMaterialAllocation.required_quantity > SalesOrderMaterialAllocation.received_quantity,
                 Product.supplier_code == source_code,
                 Product.supply_source == ProductSupplySource.external_supplier,
             )
@@ -252,6 +253,7 @@ async def list_receiving_source_items(
                 .join(Product, Product.code == SalesOrderMaterialAllocation.material_product_code)
                 .where(
                     SalesOrder.status == SalesOrderStatus.approved,
+                    SalesOrderMaterialAllocation.required_quantity > SalesOrderMaterialAllocation.received_quantity,
                     SalesOrder.customer_code == customer_code,
                     Product.supplier_code == source_code,
                     Product.supply_source == ProductSupplySource.external_supplier,
@@ -285,6 +287,7 @@ async def list_receiving_source_items(
             .join(Product, Product.code == PurchaseOrderItem.product_code)
             .where(
                 PurchaseOrder.status == PurchaseOrderStatus.approved,
+                PurchaseOrderItem.quantity_grams > PurchaseOrderItem.received_quantity,
                 po_source_filter,
                 Product.supplier_code == PurchaseOrder.supplier_code,
                 Product.supply_source == ProductSupplySource.external_supplier,
@@ -409,6 +412,15 @@ async def create_receiving(
         unit = purchase_item.unit
 
     document_quantity = grams(data.quantity_grams)
+    # The lookup filters completed source lines, but an item can become fully
+    # received after the form was opened by another user. Keep this guard
+    # inside the locked transaction. Receipt quantities above a *positive*
+    # outstanding balance remain allowed by the existing business rule.
+    if outstanding <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Source item is already fully received. Refresh the available items.",
+        )
     try:
         require_whole_quantity(document_quantity, unit)
     except ValueError as exc:

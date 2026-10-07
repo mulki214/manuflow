@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
+import '../../shared/searchable_select_field.dart';
 import '../master_data/master_data_models.dart';
 import 'user_model.dart';
 
@@ -238,24 +239,21 @@ class _UserFormDialogState extends State<UserFormDialog> {
                           setState(() => _role.text = value ?? ''),
                       validator: (value) => value == null ? 'Required' : null,
                     ),
-                    DropdownButtonFormField<String>(
-                      initialValue:
+                    SearchableSelectField<String>(
+                      value:
                           _departments.any(
                             (item) => item.code == _departmentCode,
                           )
                           ? _departmentCode
                           : null,
-                      decoration: const InputDecoration(
-                        labelText: 'Department',
-                      ),
-                      items: _departments
+                      labelText: 'Department',
+                      searchHint: 'Search department',
+                      options: _departments
                           .map(
-                            (item) => DropdownMenuItem(
+                            (item) => SearchableSelectOption(
                               value: item.code,
-                              child: Text(
-                                item.label,
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                              label: item.label,
+                              searchTerms: [item.code, item.name],
                             ),
                           )
                           .toList(),

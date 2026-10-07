@@ -230,6 +230,7 @@ async def product_response(db: AsyncSession, record: Product, actor: User) -> Pr
             "gross_weight",
             "nett_weight",
             "default_cycle_time_seconds",
+            "productivity_percentage",
             "current_stock_grams",
             "category",
             "created_at",

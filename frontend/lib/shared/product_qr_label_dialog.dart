@@ -41,19 +41,10 @@ class _ProductQrLabelDialogState extends State<ProductQrLabelDialog> {
   Future<void> _download() async {
     setState(() => _saving = true);
     try {
-      final painter = QrPainter(
-        data: widget._payload,
-        version: QrVersions.auto,
-        gapless: false,
-      );
-      final data = await painter.toImageData(
-        768,
-        format: ui.ImageByteFormat.png,
-      );
-      if (data == null) throw StateError('Unable to generate QR image.');
+      final data = await opaqueQrPng(widget._payload, 768);
       await FileSaver.instance.saveFile(
         name: widget._fileName,
-        bytes: Uint8List.view(data.buffer),
+        bytes: data,
         fileExtension: 'png',
         mimeType: MimeType.png,
       );
@@ -134,19 +125,10 @@ class _ProductQrLabelPageState extends State<ProductQrLabelPage> {
   Future<void> _download() async {
     setState(() => _saving = true);
     try {
-      final painter = QrPainter(
-        data: widget._payload,
-        version: QrVersions.auto,
-        gapless: false,
-      );
-      final image = await painter.toImageData(
-        768,
-        format: ui.ImageByteFormat.png,
-      );
-      if (image == null) throw StateError('Unable to generate QR image.');
+      final image = await opaqueQrPng(widget._payload, 768);
       await FileSaver.instance.saveFile(
         name: widget._fileName,
-        bytes: Uint8List.view(image.buffer),
+        bytes: image,
         fileExtension: 'png',
         mimeType: MimeType.png,
       );
@@ -233,17 +215,7 @@ class _QrPayloadImageState extends State<QrPayloadImage> {
   }
 
   Future<Uint8List> _render() async {
-    final painter = QrPainter(
-      data: widget.data,
-      version: QrVersions.auto,
-      gapless: false,
-    );
-    final image = await painter.toImageData(
-      widget.size * 3,
-      format: ui.ImageByteFormat.png,
-    );
-    if (image == null) throw StateError('Unable to render QR image.');
-    return image.buffer.asUint8List(image.offsetInBytes, image.lengthInBytes);
+    return opaqueQrPng(widget.data, widget.size * 3);
   }
 
   @override
@@ -279,4 +251,28 @@ class _QrPayloadImageState extends State<QrPayloadImage> {
       },
     ),
   );
+}
+
+/// Renders a portable QR PNG with an opaque white background. A transparent
+/// background is rendered dark by some viewers and printers, making a QR
+/// unreadable even though its on-screen preview appears correct.
+Future<Uint8List> opaqueQrPng(String payload, double size) async {
+  final recorder = ui.PictureRecorder();
+  final canvas = ui.Canvas(recorder);
+  final renderSize = ui.Size.square(size);
+  canvas.drawColor(Colors.white, ui.BlendMode.src);
+  final painter = QrPainter(
+    data: payload,
+    version: QrVersions.auto,
+    gapless: false,
+    eyeStyle: const QrEyeStyle(color: Colors.black),
+    dataModuleStyle: const QrDataModuleStyle(color: Colors.black),
+  );
+  painter.paint(canvas, renderSize);
+  final picture = recorder.endRecording();
+  final image = await picture.toImage(size.round(), size.round());
+  final data = await image.toByteData(format: ui.ImageByteFormat.png);
+  image.dispose();
+  if (data == null) throw StateError('Unable to render QR image.');
+  return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
 }

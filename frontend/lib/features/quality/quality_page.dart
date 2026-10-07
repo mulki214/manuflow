@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
 import '../../shared/app_module_scaffold.dart';
+import '../../shared/searchable_select_field.dart';
 import '../../shared/app_sidebar.dart' show AppModule;
 import '../../shared/crud_widgets.dart';
 import '../../shared/mobile_product_scanner.dart';
@@ -363,15 +364,21 @@ class _QualityPageState extends State<QualityPage> {
           ),
           SizedBox(
             width: 220,
-            child: DropdownButtonFormField<String>(
-              initialValue: _plant,
-              decoration: const InputDecoration(labelText: 'Plant'),
-              items: [
-                const DropdownMenuItem(value: null, child: Text('All plants')),
+            child: SearchableSelectField<String?>(
+              value: _plant,
+              labelText: 'Plant',
+              allowClear: true,
+              searchHint: 'Search plant',
+              options: [
+                const SearchableSelectOption(value: null, label: 'All plants'),
                 ..._plants.map(
-                  (p) => DropdownMenuItem(
+                  (p) => SearchableSelectOption(
                     value: p['code'].toString(),
-                    child: Text('${p['code']} — ${p['name']}'),
+                    label: '${p['code']} — ${p['name']}',
+                    searchTerms: [
+                      p['code'].toString(),
+                      p['name']?.toString() ?? '',
+                    ],
                   ),
                 ),
               ],

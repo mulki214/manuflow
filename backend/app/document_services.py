@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
+from html import escape
 from io import BytesIO
 from typing import Any
 
@@ -18,6 +19,71 @@ def format_document_quantity(value: Any, unit: str | None) -> str:
     if unit in _DISCRETE_UNITS:
         return f"{numeric:,.0f}"
     return f"{numeric:,.3f}".rstrip("0").rstrip(".")
+
+
+def _pdf_styles(styles: Any) -> tuple[Any, Any, Any, Any]:
+    """Shared, wrapping-safe cell styles for every printable document."""
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_LEFT, TA_RIGHT
+    from reportlab.lib.styles import ParagraphStyle
+
+    cell = ParagraphStyle("document-cell", parent=styles["BodyText"], fontSize=8, leading=10, wordWrap="CJK")
+    label = ParagraphStyle("document-label", parent=cell, fontName="Helvetica-Bold")
+    header = ParagraphStyle("document-header", parent=cell, fontName="Helvetica-Bold", textColor=colors.white, alignment=TA_LEFT)
+    right = ParagraphStyle("document-right", parent=cell, alignment=TA_RIGHT)
+    return cell, label, header, right
+
+
+def _pdf_text(value: Any, style: Any) -> Any:
+    """Make every external value wrap inside its table cell and escape markup."""
+    from reportlab.platypus import Paragraph
+
+    if hasattr(value, "wrap"):
+        return value
+    text = "-" if value is None or str(value).strip() == "" else str(value)
+    return Paragraph(escape(text).replace("\n", "<br/>"), style)
+
+
+def _pdf_table(
+    document: Any,
+    rows: list[list[Any]],
+    widths: list[float],
+    cell_style: Any,
+    *,
+    header_style: Any | None = None,
+    label_style: Any | None = None,
+    metadata: bool = False,
+    numeric_columns: tuple[int, ...] = (),
+    repeat_rows: int = 0,
+) -> Any:
+    """A table that always fits printable width and wraps long content safely."""
+    from reportlab.lib import colors
+    from reportlab.platypus import Table
+
+    scale = document.width / sum(widths)
+    fitted_widths = [width * scale for width in widths]
+    converted: list[list[Any]] = []
+    for row_index, row in enumerate(rows):
+        converted_row = []
+        for column_index, value in enumerate(row):
+            style = header_style if row_index == 0 and header_style is not None else cell_style
+            if metadata and row_index >= (1 if header_style is not None else 0) and column_index % 2 == 0 and label_style is not None:
+                style = label_style
+            converted_row.append(_pdf_text(value, style))
+        converted.append(converted_row)
+    style = [
+        ("GRID", (0, 0), (-1, -1), 0.3, colors.grey),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]
+    if header_style is not None:
+        style.extend([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4F659F")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white)])
+    for column in numeric_columns:
+        style.append(("ALIGN", (column, 1 if header_style is not None else 0), (column, -1), "RIGHT"))
+    return Table(converted, repeatRows=repeat_rows, colWidths=fitted_widths, style=style, splitByRow=1)
 
 
 def signed_document_payload(
@@ -84,14 +150,14 @@ def purchase_order_pdf_bytes(order: Any) -> bytes:
         title=f"Purchase Order {order.po_number}",
     )
     styles = getSampleStyleSheet()
+    cell, label, header, _ = _pdf_styles(styles)
     center = ParagraphStyle("center", parent=styles["Normal"], alignment=TA_CENTER)
     right = ParagraphStyle("right", parent=styles["Normal"], alignment=TA_RIGHT)
     story = [
         Paragraph("<b>PURCHASE ORDER</b>", styles["Title"]),
         Paragraph(f"<b>{order.po_number}</b>", center),
         Spacer(1, 5 * mm),
-        Table(
-            [
+        _pdf_table(document, [
                 ["PO Date", order.po_date.strftime("%d/%m/%Y"), "Supplier", order.supplier_name],
                 [
                     "Plant",
@@ -100,10 +166,7 @@ def purchase_order_pdf_bytes(order: Any) -> bytes:
                     order.requested_delivery_date.strftime("%d/%m/%Y"),
                 ],
                 ["Address", order.delivery_address, "Quotation", order.quotation_reference or "-"],
-            ],
-            colWidths=[28 * mm, 55 * mm, 35 * mm, 60 * mm],
-            style=[("VALIGN", (0, 0), (-1, -1), "TOP"), ("GRID", (0, 0), (-1, -1), 0.3, colors.grey)],
-        ),
+            ], [28 * mm, 55 * mm, 35 * mm, 60 * mm], cell, label_style=label, metadata=True),
         Spacer(1, 5 * mm),
     ]
     item_rows = [["No", "Product", "Description", "Qty", "Unit", "Price", "Amount"]]
@@ -112,7 +175,7 @@ def purchase_order_pdf_bytes(order: Any) -> bytes:
             [
                 item.line_number,
                 item.product_code,
-                Paragraph(item.description, styles["BodyText"]),
+                item.description,
                 format_document_quantity(item.quantity_grams, item.unit),
                 "grams" if item.unit == "gram" else item.unit,
                 f"{item.unit_price:,.2f}",
@@ -120,18 +183,7 @@ def purchase_order_pdf_bytes(order: Any) -> bytes:
             ]
         )
     story.append(
-        Table(
-            item_rows,
-            repeatRows=1,
-            colWidths=[9 * mm, 22 * mm, 58 * mm, 20 * mm, 17 * mm, 27 * mm, 29 * mm],
-            style=[
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4F659F")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("GRID", (0, 0), (-1, -1), 0.3, colors.grey),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("ALIGN", (3, 1), (-1, -1), "RIGHT"),
-            ],
-        )
+        _pdf_table(document, item_rows, [9 * mm, 22 * mm, 58 * mm, 20 * mm, 17 * mm, 27 * mm, 29 * mm], cell, header_style=header, numeric_columns=(3, 5, 6), repeat_rows=1)
     )
     story.extend(
         [
@@ -164,16 +216,29 @@ def purchase_order_pdf_bytes(order: Any) -> bytes:
         return Image(image_stream, width=25 * mm, height=25 * mm)
 
     signature_rows = [
-        [Paragraph("<b>Created By</b>", center), Paragraph("<b>Approved By</b>", center)],
-        [qr_image(order.creator_qr_payload), qr_image(order.approval_qr_payload)],
-        [Paragraph(order.created_by_name, center), Paragraph(order.reviewed_by_name or "-", center)],
+        [
+            Paragraph("<b>Supplier</b>", center),
+            Paragraph("<b>Created By</b>", center),
+            Paragraph("<b>Approved By</b>", center),
+        ],
+        ["", qr_image(order.creator_qr_payload), qr_image(order.approval_qr_payload)],
+        [
+            Paragraph("Signature & Company Stamp", center),
+            Paragraph(order.created_by_name, center),
+            Paragraph(order.reviewed_by_name or "-", center),
+        ],
     ]
     story.append(
         Table(
             signature_rows,
-            colWidths=[65 * mm, 65 * mm],
+            colWidths=[60 * mm, 60 * mm, 60 * mm],
+            rowHeights=[6 * mm, 30 * mm, 6 * mm],
             hAlign="CENTER",
-            style=[("ALIGN", (0, 0), (-1, -1), "CENTER"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE")],
+            style=[
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LINEABOVE", (0, 2), (0, 2), 0.7, colors.black),
+            ],
         )
     )
     document.build(story)
@@ -192,23 +257,20 @@ def quotation_pdf_bytes(quotation: Any) -> bytes:
     stream = BytesIO()
     document = SimpleDocTemplate(stream, pagesize=A4, rightMargin=14 * mm, leftMargin=14 * mm, topMargin=12 * mm, bottomMargin=12 * mm, title=f"Quotation {quotation.quotation_number}")
     styles = getSampleStyleSheet()
+    cell, label, header, _ = _pdf_styles(styles)
     center = ParagraphStyle("quotation-center", parent=styles["Normal"], alignment=TA_CENTER)
     right = ParagraphStyle("quotation-right", parent=styles["Normal"], alignment=TA_RIGHT)
     story = [
         Paragraph("<b>QUOTATION</b>", styles["Title"]),
         Paragraph(f"<b>{quotation.quotation_number}</b>", center),
         Spacer(1, 5 * mm),
-        Table(
-            [["Quotation Date", quotation.quotation_date.strftime("%d/%m/%Y"), "Valid Until", quotation.valid_until.strftime("%d/%m/%Y")], ["Customer", quotation.customer_name, "Contact", quotation.customer_contact_person or "-"], ["Address", quotation.customer_address, "Phone", quotation.customer_phone or "-"]],
-            colWidths=[30 * mm, 62 * mm, 30 * mm, 62 * mm],
-            style=[("VALIGN", (0, 0), (-1, -1), "TOP"), ("GRID", (0, 0), (-1, -1), 0.3, colors.grey)],
-        ),
+        _pdf_table(document, [["Quotation Date", quotation.quotation_date.strftime("%d/%m/%Y"), "Valid Until", quotation.valid_until.strftime("%d/%m/%Y")], ["Customer", quotation.customer_name, "Contact", quotation.customer_contact_person or "-"], ["Address", quotation.customer_address, "Phone", quotation.customer_phone or "-"]], [30 * mm, 62 * mm, 30 * mm, 62 * mm], cell, label_style=label, metadata=True),
         Spacer(1, 5 * mm),
     ]
     rows = [["No", "Product", "Description", "Qty", "Unit", "Price", "Amount"]]
     for item in quotation.items:
-        rows.append([item.line_number, item.part_name, Paragraph(item.description, styles["BodyText"]), format_document_quantity(item.quantity, item.unit), "grams" if item.unit == "gram" else item.unit, f"{item.unit_price:,.2f}", f"{item.amount:,.2f}"])
-    story.append(Table(rows, repeatRows=1, colWidths=[9 * mm, 28 * mm, 53 * mm, 19 * mm, 16 * mm, 28 * mm, 28 * mm], style=[("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4F659F")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("GRID", (0, 0), (-1, -1), 0.3, colors.grey), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("ALIGN", (3, 1), (-1, -1), "RIGHT")]))
+        rows.append([item.line_number, item.part_name, item.description, format_document_quantity(item.quantity, item.unit), "grams" if item.unit == "gram" else item.unit, f"{item.unit_price:,.2f}", f"{item.amount:,.2f}"])
+    story.append(_pdf_table(document, rows, [9 * mm, 28 * mm, 53 * mm, 19 * mm, 16 * mm, 28 * mm, 28 * mm], cell, header_style=header, numeric_columns=(3, 5, 6), repeat_rows=1))
     story.extend([Spacer(1, 4 * mm), Table([["Subtotal", f"{quotation.currency} {quotation.subtotal:,.2f}"], ["Discount", f"{quotation.currency} {quotation.discount_amount:,.2f}"], [f"{quotation.tax_label} ({quotation.tax_rate}%)", f"{quotation.currency} {quotation.tax_amount:,.2f}"], ["Grand Total", f"{quotation.currency} {quotation.grand_total:,.2f}"]], colWidths=[125 * mm, 48 * mm], style=[("GRID", (0, 0), (-1, -1), 0.3, colors.grey), ("ALIGN", (1, 0), (1, -1), "RIGHT"), ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold")])])
     if quotation.payment_terms:
         story.extend([Spacer(1, 4 * mm), Paragraph("<b>Payment Terms</b>", styles["Heading4"]), Paragraph(quotation.payment_terms.replace("\n", "<br/>"), styles["BodyText"])])
@@ -232,18 +294,32 @@ def purchase_request_pdf_bytes(request: Any) -> bytes:
     stream = BytesIO()
     document = SimpleDocTemplate(stream, pagesize=A4, rightMargin=14 * mm, leftMargin=14 * mm, topMargin=12 * mm, bottomMargin=12 * mm)
     styles = getSampleStyleSheet()
+    cell, label, header, _ = _pdf_styles(styles)
     center = ParagraphStyle("pr-center", parent=styles["Normal"], alignment=TA_CENTER)
     story = [Paragraph("<b>PURCHASE REQUEST</b>", styles["Title"]), Paragraph(f"<b>{request.request_number}</b>", center), Spacer(1, 5 * mm)]
-    story.append(Table([["Date", request.request_date.strftime("%d/%m/%Y"), "Status", request.status], ["Requested By", request.created_by_name, "Department", request.department_code or "-"], ["Notes", request.notes or "-", "Reviewed By", request.reviewed_by_name or "Pending review"]], colWidths=[28 * mm, 55 * mm, 35 * mm, 60 * mm], style=[("GRID", (0, 0), (-1, -1), .3, colors.grey), ("VALIGN", (0, 0), (-1, -1), "TOP")]))
-    rows = [["No", "Product", "Description", "Qty", "Unit", "Remark"]]
+    status_value = getattr(request.status, "value", request.status)
+    status_label = str(status_value).replace("_", " ").title()
+    decision_label = "Rejected By" if status_value == "rejected" else "Approved By"
+    metadata = [
+        ["Date", request.request_date.strftime("%d/%m/%Y"), "Status", status_label],
+        ["Requested By", request.created_by_name, "Department", request.department_code or "-"],
+        ["Receiving Plant", request.delivery_plant_code or "-", "Expected Arrival", request.requested_delivery_date.strftime("%d/%m/%Y") if request.requested_delivery_date else "-"],
+        ["Notes", request.notes or "-", decision_label, request.reviewed_by_name or "Pending review"],
+        ["Reviewed At", request.reviewed_at.strftime("%d/%m/%Y %H:%M") if request.reviewed_at else "-", "", ""],
+    ]
+    story.append(_pdf_table(document, metadata, [28 * mm, 55 * mm, 35 * mm, 60 * mm], cell, label_style=label, metadata=True))
+    rows = [["No", "Product", "Description", "Requested", "Approved", "Status", "Review Reason", "PO"]]
     for item in request.items:
-        rows.append([item.line_number, item.product_code, Paragraph(item.description, styles["BodyText"]), format_document_quantity(item.quantity, item.unit), item.unit, item.remark])
-    story.extend([Spacer(1, 5 * mm), Table(rows, repeatRows=1, colWidths=[10 * mm, 27 * mm, 62 * mm, 22 * mm, 18 * mm, 39 * mm], style=[("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4F659F")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("GRID", (0, 0), (-1, -1), .3, colors.grey), ("VALIGN", (0, 0), (-1, -1), "TOP")])])
+        requested = f"{format_document_quantity(item.quantity, item.unit)} {item.unit}"
+        approved = "-" if item.approved_quantity is None else f"{format_document_quantity(item.approved_quantity, item.unit)} {item.unit}"
+        item_status = getattr(item.approval_status, "value", item.approval_status)
+        rows.append([item.line_number, item.product_code, item.description, requested, approved, str(item_status).replace("_", " ").title(), item.review_reason or "-", item.purchase_order_number or "-"])
+    story.extend([Spacer(1, 5 * mm), _pdf_table(document, rows, [8 * mm, 21 * mm, 40 * mm, 19 * mm, 19 * mm, 20 * mm, 31 * mm, 24 * mm], cell, header_style=header, repeat_rows=1)])
     def qr(payload: str | None):
         if not payload: return Paragraph("Pending review", center)
         image = BytesIO(); qrcode.make(payload).save(image, format="PNG"); image.seek(0)
         return Image(image, width=25 * mm, height=25 * mm)
-    story.extend([Spacer(1, 9 * mm), Table([[Paragraph("<b>Submitted By</b>", center), Paragraph("<b>Reviewed By</b>", center)], [qr(request.creator_qr_payload), qr(request.review_qr_payload)], [Paragraph(request.created_by_name, center), Paragraph(request.reviewed_by_name or "-", center)]], colWidths=[65 * mm, 65 * mm], hAlign="CENTER", style=[("ALIGN", (0, 0), (-1, -1), "CENTER")])])
+    story.extend([Spacer(1, 9 * mm), Table([[Paragraph("<b>Submitted By</b>", center), Paragraph(f"<b>{decision_label}</b>", center)], [qr(request.creator_qr_payload), qr(request.review_qr_payload)], [Paragraph(request.created_by_name, center), Paragraph(request.reviewed_by_name or "-", center)]], colWidths=[65 * mm, 65 * mm], hAlign="CENTER", style=[("ALIGN", (0, 0), (-1, -1), "CENTER")])])
     document.build(story)
     return stream.getvalue()
 
@@ -269,21 +345,18 @@ def sales_order_pdf_bytes(order: Any) -> bytes:
         title=f"Sales Order {order.sales_order_number}",
     )
     styles = getSampleStyleSheet()
+    cell, label, header, _ = _pdf_styles(styles)
     center = ParagraphStyle("so-center", parent=styles["Normal"], alignment=TA_CENTER)
     right = ParagraphStyle("so-right", parent=styles["Normal"], alignment=TA_RIGHT)
     story = [
         Paragraph("<b>SALES ORDER</b>", styles["Title"]),
         Paragraph(f"<b>{order.sales_order_number}</b>", center),
         Spacer(1, 5 * mm),
-        Table(
-            [
+        _pdf_table(document, [
                 ["PO Receipt", order.po_receipt_date.strftime("%d/%m/%Y"), "Customer", order.customer_name],
                 ["Customer PO", order.customer_po_number, "Delivery", order.delivery_date.strftime("%d/%m/%Y")],
-                ["Ship To", order.ship_to_name, "Address", Paragraph(order.ship_to_address, styles["BodyText"])],
-            ],
-            colWidths=[28 * mm, 55 * mm, 35 * mm, 60 * mm],
-            style=[("VALIGN", (0, 0), (-1, -1), "TOP"), ("GRID", (0, 0), (-1, -1), 0.3, colors.grey)],
-        ),
+                ["Ship To", order.ship_to_name, "Address", order.ship_to_address],
+            ], [28 * mm, 55 * mm, 35 * mm, 60 * mm], cell, label_style=label, metadata=True),
         Spacer(1, 5 * mm),
     ]
     rows = [["No", "Product", "Description", "Qty", "Unit", "Price", "Amount"]]
@@ -292,7 +365,7 @@ def sales_order_pdf_bytes(order: Any) -> bytes:
             [
                 item.line_number,
                 item.product_code,
-                Paragraph(item.description, styles["BodyText"]),
+                item.description,
                 format_document_quantity(item.quantity_grams, item.unit),
                 "grams" if item.unit == "gram" else item.unit,
                 f"{item.unit_price:,.2f}",
@@ -300,18 +373,7 @@ def sales_order_pdf_bytes(order: Any) -> bytes:
             ]
         )
     story.append(
-        Table(
-            rows,
-            repeatRows=1,
-            colWidths=[9 * mm, 22 * mm, 58 * mm, 20 * mm, 17 * mm, 27 * mm, 29 * mm],
-            style=[
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4F659F")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("GRID", (0, 0), (-1, -1), 0.3, colors.grey),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("ALIGN", (3, 1), (-1, -1), "RIGHT"),
-            ],
-        )
+        _pdf_table(document, rows, [9 * mm, 22 * mm, 58 * mm, 20 * mm, 17 * mm, 27 * mm, 29 * mm], cell, header_style=header, numeric_columns=(3, 5, 6), repeat_rows=1)
     )
     story.extend(
         [
@@ -375,13 +437,13 @@ def delivery_note_pdf_bytes(delivery: Any) -> bytes:
         title=f"Delivery Note {delivery.delivery_number}",
     )
     styles = getSampleStyleSheet()
+    cell, label, header, _ = _pdf_styles(styles)
     center = ParagraphStyle("delivery-center", parent=styles["Normal"], alignment=TA_CENTER)
     story = [
         Paragraph("<b>DELIVERY NOTE</b>", styles["Title"]),
         Paragraph(f"<b>{delivery.delivery_number}</b>", center),
         Spacer(1, 5 * mm),
-        Table(
-            [
+        _pdf_table(document, [
                 [
                     "Delivery Date",
                     delivery.delivery_date.strftime("%d/%m/%Y"),
@@ -391,16 +453,13 @@ def delivery_note_pdf_bytes(delivery: Any) -> bytes:
                 ["Customer", delivery.customer_name, "Ship To", delivery.ship_to_name],
                 [
                     "Address",
-                    Paragraph(delivery.ship_to_address, styles["BodyText"]),
+                    delivery.ship_to_address,
                     "Contact",
                     delivery.ship_to_contact,
                 ],
                 ["Vehicle", delivery.vehicle_number or "-", "Transportation", delivery.transportation_name or "-"],
                 ["Driver", delivery.driver_name or "-", "Status", delivery.status_label],
-            ],
-            colWidths=[28 * mm, 55 * mm, 35 * mm, 60 * mm],
-            style=[("VALIGN", (0, 0), (-1, -1), "TOP"), ("GRID", (0, 0), (-1, -1), 0.3, colors.grey)],
-        ),
+            ], [28 * mm, 55 * mm, 35 * mm, 60 * mm], cell, label_style=label, metadata=True),
         Spacer(1, 5 * mm),
     ]
     rows = [["No", "Product", "Description", "Lot", "Qty", "Unit"]]
@@ -409,25 +468,14 @@ def delivery_note_pdf_bytes(delivery: Any) -> bytes:
             [
                 index,
                 line.product_code,
-                Paragraph(line.description or "-", styles["BodyText"]),
+                line.description or "-",
                 line.lot_number,
                 format_document_quantity(line.quantity, line.unit),
                 "grams" if line.unit == "gram" else line.unit,
             ]
         )
     story.append(
-        Table(
-            rows,
-            repeatRows=1,
-            colWidths=[10 * mm, 27 * mm, 65 * mm, 27 * mm, 24 * mm, 17 * mm],
-            style=[
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4F659F")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("GRID", (0, 0), (-1, -1), 0.3, colors.grey),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("ALIGN", (4, 1), (-1, -1), "RIGHT"),
-            ],
-        )
+        _pdf_table(document, rows, [10 * mm, 27 * mm, 65 * mm, 27 * mm, 24 * mm, 17 * mm], cell, header_style=header, numeric_columns=(4,), repeat_rows=1)
     )
     if delivery.notes:
         story.extend([Spacer(1, 4 * mm), Paragraph(f"<b>Notes:</b> {delivery.notes}", styles["BodyText"])])

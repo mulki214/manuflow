@@ -127,17 +127,12 @@ def delivery_response(r: Delivery, lines: list[DeliveryLine] | None = None) -> D
 
 async def delivery_lines(db: AsyncSession, record: Delivery) -> list[DeliveryLine]:
     """Return detail rows, with a one-line fallback for documents posted before batch support."""
-    return list(
-        (
-            await db.execute(
-                select(DeliveryLine)
-                .where(DeliveryLine.delivery_number == record.delivery_number)
-                .order_by(DeliveryLine.id)
-            )
-        )
-        .scalars()
-        .all()
+    result = await db.execute(
+        select(DeliveryLine)
+        .where(DeliveryLine.delivery_number == record.delivery_number)
+        .order_by(DeliveryLine.id)
     )
+    return list(result.scalars().all())
 
 
 @finish_router.get("/queue")
@@ -146,21 +141,34 @@ async def finish_queue(
 ) -> list[dict]:
     await warehouse_access(db, current_user)
     jobs = list(
-        (await db.execute(select(WipLotJob).where(WipLotJob.status == WipLotStatus.awaiting_finish_goods)))
-        .scalars()
+        (
+            await db.execute(
+                select(WipLotJob, Product, Plant)
+                .join(Product, Product.code == WipLotJob.product_code)
+                .join(Plant, Plant.code == WipLotJob.plant_code)
+                .where(
+                    WipLotJob.status == WipLotStatus.awaiting_finish_goods,
+                    WipLotJob.current_quantity > 0,
+                )
+                .order_by(WipLotJob.created_at, WipLotJob.id)
+            )
+        )
         .all()
     )
     return [
         {
             "job_id": j.id,
             "product_code": j.product_code,
+            "product_name": product.part_name,
+            "description": product.description,
             "lot_number": j.lot_number,
             "lot_segment_code": j.lot_segment_code,
             "quantity": j.current_quantity,
             "unit": j.unit,
             "plant_code": j.plant_code,
+            "plant_name": plant.name,
         }
-        for j in jobs
+        for j, product, plant in jobs
     ]
 
 
@@ -703,7 +711,8 @@ async def delivery_finish_good_lots(
     rows = list(
         (
             await db.execute(
-                select(ProductLot, StorageLocation)
+                select(ProductLot, Product, StorageLocation)
+                .join(Product, Product.code == ProductLot.product_code)
                 .join(StorageLocation, StorageLocation.code == ProductLot.storage_location_code)
                 .join(WarehouseStorage, WarehouseStorage.code == StorageLocation.storage_code)
                 .where(
@@ -719,6 +728,9 @@ async def delivery_finish_good_lots(
     return [
         {
             "id": lot.id,
+            "product_code": product.code,
+            "product_name": product.part_name,
+            "description": product.description,
             "lot_number": lot.lot_number,
             "quantity": display_quantity(lot.current_quantity_grams, unit),
             "unit": unit,
@@ -726,7 +738,7 @@ async def delivery_finish_good_lots(
             "storage_location_code": lot.storage_location_code,
             "storage_location_name": location.name,
         }
-        for lot, location in rows
+        for lot, product, location in rows
     ]
 
 

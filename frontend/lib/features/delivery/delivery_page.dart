@@ -5,6 +5,8 @@ import '../../core/api_client.dart';
 import '../../shared/app_module_scaffold.dart';
 import '../../shared/app_sidebar.dart' show AppModule;
 import '../../shared/mobile_product_scanner.dart';
+import '../../shared/searchable_select_field.dart';
+import '../../shared/select_option_labels.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
 
@@ -234,8 +236,12 @@ class _DeliveryPageState extends State<DeliveryPage> {
                           child: Text('All status'),
                         ),
                         DropdownMenuItem(
-                          value: 'posted',
-                          child: Text('Posted'),
+                          value: 'dispatched',
+                          child: Text('Dispatched'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'delivered',
+                          child: Text('Delivered'),
                         ),
                         DropdownMenuItem(
                           value: 'reversed',
@@ -582,20 +588,16 @@ class _DeliveryFormDialogState extends State<DeliveryFormDialog> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  DropdownButtonFormField<String>(
-                    initialValue: _salesOrderNumber,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Sales Order *',
-                    ),
-                    items: _orders
+                  SearchableSelectField<String>(
+                    value: _salesOrderNumber,
+                    labelText: 'Sales Order *',
+                    searchHint: 'Search sales order or customer',
+                    options: _orders
                         .map(
-                          (number) => DropdownMenuItem(
+                          (number) => SearchableSelectOption(
                             value: number,
-                            child: Text(
-                              _orderLabel(number),
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                            label: _orderLabel(number),
+                            searchTerms: [number, _orderLabel(number)],
                           ),
                         )
                         .toList(),
@@ -647,20 +649,21 @@ class _DeliveryFormDialogState extends State<DeliveryFormDialog> {
                     ),
                   ),
                   const SizedBox(height: 14),
-                  DropdownButtonFormField<String>(
-                    initialValue: _transportationCode,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Transportation',
-                    ),
-                    items: _transportations
+                  SearchableSelectField<String>(
+                    value: _transportationCode,
+                    labelText: 'Transportation',
+                    allowClear: true,
+                    searchHint: 'Search transportation',
+                    options: _transportations
                         .map(
-                          (item) => DropdownMenuItem(
+                          (item) => SearchableSelectOption(
                             value: item['code'].toString(),
-                            child: Text(
-                              '${item['vehicle_number']} — ${item['vehicle_type']}',
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                            label: transportationSelectLabel(item),
+                            searchTerms: [
+                              item['code'].toString(),
+                              item['vehicle_number']?.toString() ?? '',
+                              item['vehicle_type']?.toString() ?? '',
+                            ],
                           ),
                         )
                         .toList(),
@@ -750,39 +753,44 @@ class _DeliveryLineEditor extends StatelessWidget {
               ),
             ],
           ),
-          DropdownButtonFormField<Map<String, dynamic>>(
-            initialValue: line.item,
-            isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'Outstanding Product *',
-            ),
-            items: items
+          SearchableSelectField<Map<String, dynamic>>(
+            value: line.item,
+            labelText: 'Outstanding Product *',
+            searchHint: 'Search product',
+            options: items
                 .map(
-                  (item) => DropdownMenuItem(
+                  (item) => SearchableSelectOption(
                     value: item,
-                    child: Text(
-                      '${item['product_name'] ?? item['description'] ?? item['product_code']} — ${formatQuantity(item['outstanding_quantity'], item['unit'].toString())} ${unitLabel(item['unit'].toString())}',
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    label:
+                        '${item['product_name'] ?? item['description'] ?? item['product_code']} — ${formatQuantity(item['outstanding_quantity'], item['unit'].toString())} ${unitLabel(item['unit'].toString())}',
+                    searchTerms: [
+                      item['product_code']?.toString() ?? '',
+                      item['product_name']?.toString() ?? '',
+                      item['description']?.toString() ?? '',
+                    ],
                   ),
                 )
                 .toList(),
             onChanged: onItemChanged,
           ),
           const SizedBox(height: 10),
-          DropdownButtonFormField<Map<String, dynamic>>(
-            initialValue: line.lot,
-            isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'Finished Goods Lot *',
-            ),
-            items: line.lots
+          SearchableSelectField<Map<String, dynamic>>(
+            value: line.lot,
+            labelText: 'Finished Goods Lot *',
+            searchHint: 'Search lot',
+            options: line.lots
                 .map(
-                  (lot) => DropdownMenuItem(
+                  (lot) => SearchableSelectOption(
                     value: lot,
-                    child: Text(
-                      'Lot ${lot['lot_number']} — ${formatQuantity(lot['quantity'], lot['unit'].toString())} ${unitLabel(lot['unit'].toString())}',
+                    label: lotSelectLabel(
+                      lot,
+                      quantity:
+                          '${formatQuantity(lot['quantity'], lot['unit'].toString())} ${unitLabel(lot['unit'].toString())}',
                     ),
+                    searchTerms: [
+                      lot['lot_number']?.toString() ?? '',
+                      lot['product_code']?.toString() ?? '',
+                    ],
                   ),
                 )
                 .toList(),

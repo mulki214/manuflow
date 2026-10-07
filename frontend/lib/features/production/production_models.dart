@@ -135,49 +135,62 @@ class ProductionExecutionModel {
     this.endedAt,
     this.cycleTimeSeconds,
     this.observedCycleTimeSeconds,
+    this.targetProductivityPercentage,
+    this.targetOutcomeQuantity,
+    this.outcomeAchievementPercentage,
     this.ngOverrideReason,
   });
 
-  factory ProductionExecutionModel.fromJson(Map<String, dynamic> json) =>
-      ProductionExecutionModel(
-        id: json['id'] as int,
-        number: json['production_number'].toString(),
-        date: DateTime.parse(json['process_date'].toString()),
-        shift: json['shift'].toString(),
-        productCode: json['product_code'].toString(),
-        description: json['description'].toString(),
-        lotNumber: json['lot_number'].toString(),
-        segmentCode: json['lot_segment_code'].toString(),
-        plantName: json['plant_name'].toString(),
-        unit: json['unit'].toString(),
-        outputUnit: json['output_unit']?.toString() ?? json['unit'].toString(),
-        beforeProcess:
-            '${json['before_process_code']} — ${json['before_process_name']}',
-        afterProcess: json['after_process_name']?.toString() ?? 'Quality Queue',
-        machineName: json['machine_name']?.toString() ?? '-',
-        processingQuantity: productionNumber(json['processing_quantity']),
-        goodQuantity: productionNumber(json['good_quantity']),
-        repairQuantity: productionNumber(json['repair_quantity']),
-        ngQuantity: productionNumber(json['ng_quantity']),
-        performedBy: json['performed_by_name'].toString(),
-        breakDurationMinutes: json['break_duration_minutes'] as int? ?? 0,
-        ngLimitExceeded: json['ng_limit_exceeded'] == true,
-        isReversed: json['reversed_at'] != null,
-        canReverse: json['can_reverse'] == true,
-        startedAt: json['started_at'] == null
-            ? null
-            : DateTime.parse(json['started_at'].toString()),
-        endedAt: json['ended_at'] == null
-            ? null
-            : DateTime.parse(json['ended_at'].toString()),
-        cycleTimeSeconds: json['cycle_time_seconds'] == null
-            ? null
-            : productionNumber(json['cycle_time_seconds']),
-        observedCycleTimeSeconds: json['observed_cycle_time_seconds'] == null
-            ? null
-            : productionNumber(json['observed_cycle_time_seconds']),
-        ngOverrideReason: json['ng_override_reason']?.toString(),
-      );
+  factory ProductionExecutionModel.fromJson(
+    Map<String, dynamic> json,
+  ) => ProductionExecutionModel(
+    id: json['id'] as int,
+    number: json['production_number'].toString(),
+    date: DateTime.parse(json['process_date'].toString()),
+    shift: json['shift'].toString(),
+    productCode: json['product_code'].toString(),
+    description: json['description'].toString(),
+    lotNumber: json['lot_number'].toString(),
+    segmentCode: json['lot_segment_code'].toString(),
+    plantName: json['plant_name'].toString(),
+    unit: json['unit'].toString(),
+    outputUnit: json['output_unit']?.toString() ?? json['unit'].toString(),
+    beforeProcess:
+        '${json['before_process_code']} — ${json['before_process_name']}',
+    afterProcess: json['after_process_name']?.toString() ?? 'Quality Queue',
+    machineName: json['machine_name']?.toString() ?? '-',
+    processingQuantity: productionNumber(json['processing_quantity']),
+    goodQuantity: productionNumber(json['good_quantity']),
+    repairQuantity: productionNumber(json['repair_quantity']),
+    ngQuantity: productionNumber(json['ng_quantity']),
+    performedBy: json['performed_by_name'].toString(),
+    breakDurationMinutes: json['break_duration_minutes'] as int? ?? 0,
+    ngLimitExceeded: json['ng_limit_exceeded'] == true,
+    isReversed: json['reversed_at'] != null,
+    canReverse: json['can_reverse'] == true,
+    startedAt: json['started_at'] == null
+        ? null
+        : DateTime.parse(json['started_at'].toString()),
+    endedAt: json['ended_at'] == null
+        ? null
+        : DateTime.parse(json['ended_at'].toString()),
+    cycleTimeSeconds: json['cycle_time_seconds'] == null
+        ? null
+        : productionNumber(json['cycle_time_seconds']),
+    observedCycleTimeSeconds: json['observed_cycle_time_seconds'] == null
+        ? null
+        : productionNumber(json['observed_cycle_time_seconds']),
+    targetProductivityPercentage: json['target_productivity_percentage'] == null
+        ? null
+        : productionNumber(json['target_productivity_percentage']),
+    targetOutcomeQuantity: json['target_outcome_quantity'] == null
+        ? null
+        : productionNumber(json['target_outcome_quantity']),
+    outcomeAchievementPercentage: json['outcome_achievement_percentage'] == null
+        ? null
+        : productionNumber(json['outcome_achievement_percentage']),
+    ngOverrideReason: json['ng_override_reason']?.toString(),
+  );
 
   final int id;
   final String number;
@@ -206,5 +219,8 @@ class ProductionExecutionModel {
   final DateTime? endedAt;
   final double? cycleTimeSeconds;
   final double? observedCycleTimeSeconds;
+  final double? targetProductivityPercentage;
+  final double? targetOutcomeQuantity;
+  final double? outcomeAchievementPercentage;
   final String? ngOverrideReason;
 }
