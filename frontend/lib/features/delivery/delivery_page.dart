@@ -236,8 +236,12 @@ class _DeliveryPageState extends State<DeliveryPage> {
                           child: Text('All status'),
                         ),
                         DropdownMenuItem(
-                          value: 'posted',
-                          child: Text('Posted'),
+                          value: 'dispatched',
+                          child: Text('Dispatched'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'delivered',
+                          child: Text('Delivered'),
                         ),
                         DropdownMenuItem(
                           value: 'reversed',

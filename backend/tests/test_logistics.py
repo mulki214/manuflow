@@ -5,8 +5,8 @@ import pytest
 from app.document_services import delivery_note_pdf_bytes
 from app.logistics_services import format_document_number
 from app.middleware import is_delivery_path, is_finish_good_path
-from app.models import Delivery, DeliveryStatus, FinishGoodReceipt, FinishGoodStatus
-from app.routers.logistics import delivery_response, delivery_router, finish_response, finish_router
+from app.models import Delivery, DeliveryLine, DeliveryStatus, FinishGoodReceipt, FinishGoodStatus
+from app.routers.logistics import delivery_lines, delivery_response, delivery_router, finish_response, finish_router
 from app.schemas import BillOfMaterialReplace, BomItemInput, DeliveryBatchCreate, DeliveryConfirm
 
 
@@ -46,6 +46,49 @@ def test_delivery_response_only_allows_reversing_posted_records() -> None:
     assert delivery_response(record).can_confirm_delivery is False
     record.status = DeliveryStatus.reversed
     assert delivery_response(record).can_reverse is False
+
+
+async def test_delivery_lines_returns_orm_models_not_sqlalchemy_rows() -> None:
+    record = Delivery(
+        delivery_number="DLV-210826-000",
+        delivery_date=date(2026, 8, 21),
+        sales_order_item_id=1,
+        sales_order_number="SO-001",
+        customer_name="Customer A",
+        product_code="FG-001",
+        lot_id=10,
+        lot_number="LOT-1",
+        quantity=10,
+        unit="pcs",
+        notes="",
+        status=DeliveryStatus.dispatched,
+        performed_by="USR-001",
+        created_at=datetime(2026, 8, 21),
+    )
+    line = DeliveryLine(
+        delivery_number=record.delivery_number,
+        sales_order_item_id=1,
+        lot_id=10,
+        product_code="FG-001",
+        lot_number="LOT-1",
+        quantity=10,
+        unit="pcs",
+    )
+
+    class Result:
+        def scalars(self):
+            return self
+
+        def all(self):
+            return [line]
+
+    class Session:
+        async def execute(self, statement):
+            return Result()
+
+    lines = await delivery_lines(Session(), record)
+    assert lines == [line]
+    assert delivery_response(record, lines).lines[0].product_code == "FG-001"
 
 
 def test_finish_good_response_only_allows_reversing_posted_receipts() -> None:

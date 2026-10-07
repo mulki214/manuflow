@@ -127,16 +127,12 @@ def delivery_response(r: Delivery, lines: list[DeliveryLine] | None = None) -> D
 
 async def delivery_lines(db: AsyncSession, record: Delivery) -> list[DeliveryLine]:
     """Return detail rows, with a one-line fallback for documents posted before batch support."""
-    return list(
-        (
-            await db.execute(
-                select(DeliveryLine)
-                .where(DeliveryLine.delivery_number == record.delivery_number)
-                .order_by(DeliveryLine.id)
-            )
-        )
-        .all()
+    result = await db.execute(
+        select(DeliveryLine)
+        .where(DeliveryLine.delivery_number == record.delivery_number)
+        .order_by(DeliveryLine.id)
     )
+    return list(result.scalars().all())
 
 
 @finish_router.get("/queue")
