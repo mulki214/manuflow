@@ -527,7 +527,7 @@ class _QrLabelFormState extends State<_QrLabelForm> {
                 color: Colors.white,
                 padding: const EdgeInsets.all(12),
                 child: QrPayloadImage(
-                  data: 'MANUFLOW-LABEL|$_resolved',
+                  data: _resolved,
                   size: 180,
                 ),
               ),
@@ -564,7 +564,7 @@ class _QrLabelPreviewState extends State<_QrLabelPreview> {
     setState(() => _downloading = true);
     try {
       final image = await QrPainter(
-        data: 'MANUFLOW-LABEL|${widget.text}',
+        data: widget.text,
         version: QrVersions.auto,
         gapless: false,
       ).toImageData(768, format: ui.ImageByteFormat.png);
@@ -602,7 +602,7 @@ class _QrLabelPreviewState extends State<_QrLabelPreview> {
             color: Colors.white,
             padding: const EdgeInsets.all(12),
             child: QrPayloadImage(
-              data: 'MANUFLOW-LABEL|${widget.text}',
+              data: widget.text,
               size: 280,
             ),
           ),
