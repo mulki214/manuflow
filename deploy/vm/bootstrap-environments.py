@@ -69,7 +69,6 @@ def main() -> None:
             "POSTGRES_VOLUME": "manuflow_prod_postgres_data",
             "JWT_SECRET": secrets.token_hex(64),
             "FIRST_ADMIN_EMAIL": "admin@example.com",
-            "FIRST_ADMIN_PASSWORD": "Admin123!",
             "FIRST_ADMIN_FIRST_NAME": "System",
             "FIRST_ADMIN_LAST_NAME": "Administrator",
             "API_URL": "https://ap.103.93.134.27.nip.io/api/v1",

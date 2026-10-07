@@ -16,8 +16,9 @@ TLS proxy.
 2. Run `python3 /opt/manuflow/deploy/vm/bootstrap-environments.py` once. It
    preserves current production credentials in `.env.staging`, assigns the
    existing database volume to staging, creates fresh production database/JWT
-   secrets, and sets the production bootstrap admin to `admin@example.com` /
-   `Admin123!`. It does not print credentials and refuses to run a second time.
+   secrets, and carries the existing protected admin bootstrap credentials into
+   the new production environment. It does not print credentials and refuses
+   to run a second time.
 3. Keep `/opt/manuflow/.env.staging` and `/opt/manuflow/.env.production` private
    (`0600`). These files are excluded from release archives and Git.
 4. Add the public SSH key matching GitHub's `DEPLOY_SSH_KEY` secret to
