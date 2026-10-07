@@ -99,7 +99,9 @@ fi
 if ! docker inspect manuflow-caddy-1 --format '{{json .NetworkSettings.Networks}}' | grep -q 'manuflow_proxy'; then
   docker network connect manuflow_proxy manuflow-caddy-1
 fi
-install -m 0644 "$release_dir/deploy/production/Caddyfile" "$base_dir/deploy/production/Caddyfile"
+python3 -c 'from pathlib import Path; import sys; Path(sys.argv[2]).write_bytes(Path(sys.argv[1]).read_bytes())' \
+  "$release_dir/deploy/production/Caddyfile" "$base_dir/deploy/production/Caddyfile"
+docker exec manuflow-caddy-1 caddy validate --config /etc/caddy/Caddyfile
 docker exec manuflow-caddy-1 caddy reload --config /etc/caddy/Caddyfile
 
 echo "Deployed $environment revision $revision"
