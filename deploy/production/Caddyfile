@@ -1,9 +1,19 @@
 erp.103.93.134.27.nip.io {
   encode zstd gzip
-  reverse_proxy web:80
+  reverse_proxy staging-web:80
 }
 
 api.103.93.134.27.nip.io {
   encode zstd gzip
-  reverse_proxy api:8000
+  reverse_proxy staging-api:8000
+}
+
+ep.103.93.134.27.nip.io {
+  encode zstd gzip
+  reverse_proxy production-web:80
+}
+
+ap.103.93.134.27.nip.io {
+  encode zstd gzip
+  reverse_proxy production-api:8000
 }
