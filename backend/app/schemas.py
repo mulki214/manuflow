@@ -10,15 +10,17 @@ from app.models import (
     InventoryMovementType,
     ProductCategory,
     ProductSupplySource,
+    PurchaseOrderKind,
     PurchaseOrderStatus,
-    PurchaseRequestStatus,
     PurchaseRequestItemApprovalStatus,
+    PurchaseRequestStatus,
     ReceivingSourceType,
     ReceivingStatus,
     ReceivingTransportSource,
     SalesOrderStatus,
     SalesOrderType,
     StorageType,
+    SubcontractDispatchStatus,
     UnitOfMeasure,
     WarehouseDestinationType,
     WarehouseTransferStatus,
@@ -374,7 +376,10 @@ class ModuleAccessResponse(BaseModel):
 
 class PurchaseOrderItemInput(BaseModel):
     id: int | None = Field(default=None, gt=0)
+    sales_order_item_id: int | None = Field(default=None, gt=0)
     product_code: str = Field(min_length=1, max_length=15)
+    process_from_code: str | None = Field(default=None, max_length=20)
+    process_to_code: str | None = Field(default=None, max_length=20)
     quantity_grams: Decimal = Field(gt=0, decimal_places=3)
     unit: UnitOfMeasure = UnitOfMeasure.pcs
     unit_price: Decimal = Field(ge=0, decimal_places=4)
@@ -394,6 +399,8 @@ class PurchaseOrderItemInput(BaseModel):
 
 
 class PurchaseOrderBase(BaseModel):
+    sales_order_number: str | None = Field(default=None, max_length=20)
+    order_kind: PurchaseOrderKind = PurchaseOrderKind.purchase
     po_date: date
     supplier_code: str = Field(min_length=1, max_length=15)
     quotation_reference: str | None = Field(default=None, max_length=100)
@@ -419,6 +426,13 @@ class PurchaseOrderBase(BaseModel):
 
     @model_validator(mode="after")
     def validate_purchase_order(self) -> "PurchaseOrderBase":
+        if self.order_kind == PurchaseOrderKind.subcontract and not self.sales_order_number:
+            raise ValueError("A subcontract Purchase Order must reference a Sales Order")
+        if self.order_kind == PurchaseOrderKind.subcontract:
+            if any(not item.process_to_code for item in self.items):
+                raise ValueError("A next process is required for every subcontract item")
+        elif any(item.process_from_code or item.process_to_code for item in self.items):
+            raise ValueError("Process stages can only be set for subcontract Purchase Orders")
         if self.quotation_reference and self.quotation_date is None:
             raise ValueError("Quotation date is required when quotation reference is provided")
         if self.requested_delivery_date < self.po_date:
@@ -441,6 +455,9 @@ class PurchaseOrderItemResponse(BaseModel):
     id: int
     line_number: int
     product_code: str
+    sales_order_item_id: int | None
+    process_from_code: str | None
+    process_to_code: str | None
     part_name: str
     part_no: str
     description: str
@@ -448,6 +465,7 @@ class PurchaseOrderItemResponse(BaseModel):
     unit: str
     received_quantity: Decimal
     outstanding_quantity: Decimal
+    excess_quantity: Decimal
     unit_price: Decimal
     amount: Decimal
     remark: str
@@ -457,6 +475,8 @@ class PurchaseOrderItemResponse(BaseModel):
 
 class PurchaseOrderResponse(BaseModel):
     po_number: str
+    sales_order_number: str | None
+    order_kind: PurchaseOrderKind
     po_date: date
     supplier_code: str
     supplier_name: str
@@ -873,13 +893,14 @@ class ReceivingCreate(BaseModel):
     source_code: str = Field(min_length=1, max_length=15)
     source_document_item_id: int
     # Explicit UI context. The legacy source fields remain stored for existing receipts.
-    document_type: str | None = Field(default=None, pattern="^(purchase_order|sales_order)$")
+    document_type: str | None = Field(default=None, pattern="^(purchase_order|sales_order|subcontract_return)$")
     customer_code: str | None = Field(default=None, min_length=1, max_length=15)
     lot_number: str = Field(min_length=1, max_length=100)
     quantity_grams: Decimal = Field(gt=0, decimal_places=3)
     plant_code: str = Field(min_length=5, max_length=5)
     storage_location_code: str = Field(min_length=1, max_length=15)
     document_number: str | None = Field(default=None, max_length=100)
+    subcontract_dispatch_id: int | None = Field(default=None, gt=0)
     transport_source: ReceivingTransportSource = ReceivingTransportSource.external
     transportation_code: str | None = Field(default=None, max_length=15)
     vehicle_number: str | None = Field(default=None, max_length=50)
@@ -901,6 +922,8 @@ class ReceivingCreate(BaseModel):
     def validate_transport_source(self) -> "ReceivingCreate":
         if self.document_type == "purchase_order" and self.source_type != ReceivingSourceType.customer:
             raise ValueError("Purchase Order Receiving must use the supplier source")
+        if self.document_type == "subcontract_return" and self.source_type != ReceivingSourceType.supplier:
+            raise ValueError("Subcontract return Receiving must use the subcontractor source")
         if self.document_type == "sales_order" and self.source_type != ReceivingSourceType.supplier:
             raise ValueError("Sales Order Receiving must use the supplier source")
         if self.transport_source == ReceivingTransportSource.internal and not self.transportation_code:
@@ -918,6 +941,7 @@ class ReceivingSourceItemResponse(BaseModel):
     source_name: str
     document_number: str
     item_id: int
+    subcontract_dispatch_id: int | None = None
     product_code: str
     product_description: str
     ordered_quantity: Decimal
@@ -928,6 +952,50 @@ class ReceivingSourceItemResponse(BaseModel):
 
 class ReceivingSourceItemsResponse(BaseModel):
     items: list[ReceivingSourceItemResponse]
+
+
+class SubcontractDispatchCreate(BaseModel):
+    purchase_order_item_id: int = Field(gt=0)
+    source_lot_id: int | None = Field(default=None, gt=0)
+    source_wip_job_id: int | None = Field(default=None, gt=0)
+    quantity: Decimal = Field(gt=0, decimal_places=3)
+    expected_output_quantity: Decimal = Field(gt=0, decimal_places=3)
+    source_process_code: str | None = Field(default=None, max_length=20)
+    process_to_code: str = Field(min_length=1, max_length=20)
+    notes: str = Field(default="", max_length=3000)
+
+    @field_validator("notes")
+    @classmethod
+    def strip_dispatch_notes(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def validate_one_source(self) -> "SubcontractDispatchCreate":
+        if (self.source_lot_id is None) == (self.source_wip_job_id is None):
+            raise ValueError("Select exactly one source stock lot or WIP job")
+        return self
+
+
+class SubcontractDispatchResponse(BaseModel):
+    id: int
+    dispatch_number: str
+    purchase_order_item_id: int
+    source_lot_id: int | None
+    source_wip_job_id: int | None
+    product_code: str
+    lot_number: str
+    quantity: Decimal
+    unit: str
+    expected_output_quantity: Decimal
+    source_process_code: str | None
+    process_to_code: str
+    subcontractor_code: str
+    status: SubcontractDispatchStatus
+    returned_quantity: Decimal
+    notes: str
+    dispatched_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ReceivingReversal(BaseModel):
@@ -956,6 +1024,7 @@ class ReceivingResponse(BaseModel):
     source_type: ReceivingSourceType | None
     source_code: str | None
     source_document_item_id: int | None
+    subcontract_dispatch_id: int | None
     document_number: str | None
     po_number: str | None
     vehicle_number: str | None
@@ -1139,7 +1208,8 @@ class ProductProcessStandardCreate(BaseModel):
 
 
 class ConsumableDispositionCreate(BaseModel):
-    source_lot_id: int
+    source_lot_id: int | None
+    source_wip_job_id: int | None
     consumed_quantity: Decimal = Field(default=Decimal("0"), ge=0, decimal_places=3)
     waste_quantity: Decimal = Field(default=Decimal("0"), ge=0, decimal_places=3)
     scrap_quantity: Decimal = Field(default=Decimal("0"), ge=0, decimal_places=3)
@@ -1269,6 +1339,7 @@ class ProductionExecutionResponse(BaseModel):
     machine_code: str | None
     machine_name: str | None
     processing_quantity: Decimal
+    bom_consumable_quantity: Decimal = Decimal("0")
     good_quantity: Decimal
     repair_quantity: Decimal
     ng_quantity: Decimal
@@ -1632,6 +1703,7 @@ class PaginatedWarehouseMaterialTransfers(BaseModel):
 
 class PurchaseRequestItemInput(BaseModel):
     product_code: str = Field(min_length=1, max_length=30)
+    sales_order_item_id: int | None = Field(default=None, gt=0)
     quantity: Decimal = Field(gt=0, max_digits=14, decimal_places=3)
     unit: UnitOfMeasure
     remark: str = Field(default="", max_length=2000)
@@ -1643,6 +1715,7 @@ class PurchaseRequestItemInput(BaseModel):
 
 
 class PurchaseRequestCreate(BaseModel):
+    sales_order_number: str | None = Field(default=None, max_length=20)
     request_date: date
     requested_delivery_date: date
     delivery_plant_code: str = Field(min_length=5, max_length=5)
@@ -1686,6 +1759,7 @@ class PurchaseRequestItemResponse(BaseModel):
     id: int
     line_number: int
     product_code: str
+    sales_order_item_id: int | None = None
     part_name: str
     part_no: str
     description: str
@@ -1703,6 +1777,7 @@ class PurchaseRequestItemResponse(BaseModel):
 class PurchaseRequestResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     request_number: str
+    sales_order_number: str | None = None
     request_date: date
     requested_delivery_date: date | None
     delivery_plant_code: str | None

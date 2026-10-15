@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Iterable, Protocol
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
@@ -11,6 +12,13 @@ from app.config import settings
 from app.models import DailyPurchaseOrderSequence, PurchaseOrderStatus
 
 MONEY = Decimal("0.01")
+
+
+class MaterialAllocationLike(Protocol):
+    material_product_code: str
+    required_quantity: Decimal
+    received_quantity: Decimal
+    unit: str
 
 
 @dataclass(frozen=True)
@@ -50,6 +58,33 @@ def calculate_purchase_totals(
         pph23_amount=pph23_amount,
         grand_total=money(taxable_amount + ppn_amount - pph23_amount),
     )
+
+
+def sales_order_po_demand_rows(
+    product_code: str,
+    quantity: Decimal,
+    delivered_quantity: Decimal,
+    unit: str,
+    material_allocations: Iterable[MaterialAllocationLike],
+) -> list[tuple[str, Decimal, str, bool]]:
+    """Return distinct PO demands, excluding the synthetic multi-stage self-allocation.
+
+    Multi-stage SOs keep an allocation for Receiving customer-supplied product,
+    but that is the same demand as the SO output and must not become a second PO
+    candidate.
+    """
+    rows = [(product_code, quantity - delivered_quantity, unit, True)]
+    rows.extend(
+        (
+            allocation.material_product_code,
+            allocation.required_quantity - allocation.received_quantity,
+            allocation.unit,
+            False,
+        )
+        for allocation in material_allocations
+        if allocation.material_product_code != product_code
+    )
+    return rows
 
 
 def format_purchase_order_number(order_date: date, sequence: int) -> str:

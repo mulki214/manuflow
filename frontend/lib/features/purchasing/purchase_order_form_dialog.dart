@@ -30,8 +30,12 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
   List<Map<String, dynamic>> _suppliers = [];
   List<Map<String, dynamic>> _plants = [];
   List<Map<String, dynamic>> _products = [];
+  List<Map<String, dynamic>> _salesOrders = [];
+  List<Map<String, dynamic>> _soCandidates = [];
   String? _supplierCode;
   String? _plantCode;
+  String? _salesOrderNumber;
+  String _orderKind = 'purchase';
   late DateTime _poDate;
   late DateTime _deliveryDate;
   DateTime? _quotationDate;
@@ -50,6 +54,8 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
     _quotationDate = order?.quotationDate;
     _supplierCode = order?.supplierCode;
     _plantCode = order?.deliveryPlantCode;
+    _salesOrderNumber = order?.salesOrderNumber;
+    _orderKind = order?.orderKind ?? 'purchase';
     _quotationReference.text = order?.quotationReference ?? '';
     _paymentTerms.text = order?.paymentTermsDays.toString() ?? '30';
     _discount.text = order?.discountAmount.toString() ?? '0';
@@ -80,12 +86,19 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
           '/master-data/corporations?size=100&supplier_only=true',
         ),
         widget.api.getJson('/master-data/plants?size=100'),
+        widget.api.getJson(
+          '/purchasing/sales-orders-for-po?size=100${widget.order == null ? '' : '&exclude_po_number=${Uri.encodeQueryComponent(widget.order!.poNumber)}'}',
+        ),
       ]);
       if (!mounted) return;
       _suppliers = List<Map<String, dynamic>>.from(
         responses[0]['items'] as List,
       );
       _plants = List<Map<String, dynamic>>.from(responses[1]['items'] as List);
+      _salesOrders = List<Map<String, dynamic>>.from(
+        responses[2]['items'] as List,
+      );
+      _selectSoCandidates(_salesOrderNumber);
       if (_supplierCode != null) await _loadProducts(_supplierCode!);
       final existing = widget.order;
       if (existing != null) {
@@ -128,6 +141,39 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
     }
   }
 
+  void _selectSoCandidates(String? number) {
+    _salesOrderNumber = number;
+    final order = _salesOrders.cast<Map<String, dynamic>?>().firstWhere(
+      (entry) => entry?['sales_order_number'] == number,
+      orElse: () => null,
+    );
+    _soCandidates = List<Map<String, dynamic>>.from(
+      order?['items'] as List? ?? const [],
+    );
+  }
+
+  Future<void> _changeSalesOrder(String? number) async {
+    setState(() {
+      _selectSoCandidates(number);
+      for (final item in _items) {
+        item.salesOrderItemId = null;
+        item.candidateKey = null;
+        item.productCode = null;
+        item.processFromCode = null;
+        item.processToCode = null;
+      }
+    });
+  }
+
+  List<Map<String, dynamic>> _candidatesForItem() => _orderKind == 'subcontract'
+      ? _soCandidates
+            .where((candidate) => candidate['is_output'] == true)
+            .toList()
+      : _soCandidates;
+
+  String _candidateKey(Map<String, dynamic> candidate) =>
+      '${candidate['sales_order_item_id']}|${candidate['product_code']}';
+
   Future<DateTime?> _pickDate(DateTime initial) {
     return showDatePicker(
       context: context,
@@ -152,12 +198,20 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
   Future<void> _submit() async {
     setState(() => _error = null);
     if (!_formKey.currentState!.validate()) return;
-    if (_supplierCode == null || _plantCode == null) {
-      setState(() => _error = 'Supplier and Plant are required.');
+    if (_supplierCode == null ||
+        _plantCode == null ||
+        (_salesOrderNumber == null && widget.order?.salesOrderNumber != null) ||
+        (_salesOrderNumber == null && widget.order == null)) {
+      setState(
+        () => _error =
+            'Supplier, Plant, and Sales Order are required for new Purchase Orders.',
+      );
       return;
     }
     final productCodes = _items.map((item) => item.productCode).toList();
-    if (productCodes.any((code) => code == null)) {
+    if (productCodes.any((code) => code == null) ||
+        (_salesOrderNumber != null &&
+            _items.any((item) => item.salesOrderItemId == null))) {
       setState(() => _error = 'Select a Product for every item.');
       return;
     }
@@ -169,6 +223,8 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
     setState(() => _saving = true);
     final body = <String, dynamic>{
       'po_date': _date(_poDate),
+      'sales_order_number': _salesOrderNumber,
+      'order_kind': _orderKind,
       'supplier_code': _supplierCode,
       'quotation_reference': _quotationReference.text.trim().isEmpty
           ? null
@@ -186,6 +242,13 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
             (item) => {
               'id': item.id,
               'product_code': item.productCode,
+              'sales_order_item_id': item.salesOrderItemId,
+              'process_from_code': _orderKind == 'subcontract'
+                  ? item.processFromCode
+                  : null,
+              'process_to_code': _orderKind == 'subcontract'
+                  ? item.processToCode
+                  : null,
               'quantity_grams': double.parse(item.quantity.text),
               'unit': item.unit,
               'unit_price': double.parse(item.price.text),
@@ -325,6 +388,53 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
               spacing: 16,
               runSpacing: 16,
               children: [
+                _fieldBox(
+                  DropdownButtonFormField<String>(
+                    initialValue: _orderKind,
+                    decoration: const InputDecoration(labelText: 'PO Type *'),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'purchase',
+                        child: Text('Purchase'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'subcontract',
+                        child: Text('Subcontract'),
+                      ),
+                    ],
+                    onChanged: (value) => setState(() {
+                      _orderKind = value ?? 'purchase';
+                      for (final item in _items) {
+                        item.processFromCode = null;
+                        item.processToCode = null;
+                      }
+                    }),
+                  ),
+                ),
+                _fieldBox(
+                  SearchableSelectField<String>(
+                    value: _salesOrderNumber,
+                    labelText: 'Sales Order *',
+                    searchHint: 'Search approved Sales Order',
+                    options: _salesOrders
+                        .map(
+                          (so) => SearchableSelectOption(
+                            value: so['sales_order_number'].toString(),
+                            label:
+                                '${so['sales_order_number']} — ${so['customer_name']}',
+                            searchTerms: [
+                              so['sales_order_number'].toString(),
+                              so['customer_name']?.toString() ?? '',
+                              so['customer_po_number']?.toString() ?? '',
+                            ],
+                          ),
+                        )
+                        .toList(),
+                    onChanged: _changeSalesOrder,
+                    validator: (value) =>
+                        value == null ? 'Sales Order is required' : null,
+                  ),
+                ),
                 _fieldBox(
                   _dateField('PO Date', _poDate, (value) => _poDate = value),
                 ),
@@ -518,6 +628,7 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
   }
 
   Widget _itemCard(int index, _OrderItemDraft item) {
+    final candidates = _candidatesForItem();
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -545,32 +656,78 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
               spacing: 12,
               runSpacing: 12,
               children: [
-                SizedBox(
-                  width: 310,
-                  child: SearchableSelectField<String>(
-                    value: item.productCode,
-                    labelText: 'Product *',
-                    searchHint: 'Search product',
-                    options: _products
-                        .map(
-                          (product) => SearchableSelectOption(
-                            value: product['code'].toString(),
-                            label: productSelectLabel(product),
-                            searchTerms: [
-                              product['code'].toString(),
-                              product['description']?.toString() ?? '',
-                              product['part_name']?.toString() ?? '',
-                              product['part_no']?.toString() ?? '',
-                            ],
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) =>
-                        setState(() => item.productCode = value),
-                    validator: (value) =>
-                        value == null ? 'Product is required' : null,
+                if (_salesOrderNumber != null)
+                  SizedBox(
+                    width: 390,
+                    child: SearchableSelectField<String>(
+                      value: item.candidateKey,
+                      labelText: _orderKind == 'subcontract'
+                          ? 'SO Product *'
+                          : 'SO Product / BOM Material *',
+                      searchHint: 'Search linked product',
+                      options: candidates
+                          .map(
+                            (candidate) => SearchableSelectOption(
+                              value: _candidateKey(candidate),
+                              label:
+                                  '${candidate['product_code']} — ${candidate['product_name']} • max ${formatQuantity(candidate['quantity'], candidate['unit'].toString())} ${candidate['unit']}',
+                              searchTerms: [
+                                candidate['product_code'].toString(),
+                                candidate['product_name']?.toString() ?? '',
+                                candidate['description']?.toString() ?? '',
+                              ],
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (key) => setState(() {
+                        final candidate = candidates.firstWhere(
+                          (entry) => _candidateKey(entry) == key,
+                        );
+                        item.candidateKey = key;
+                        item.salesOrderItemId =
+                            candidate['sales_order_item_id'] as int;
+                        item.productCode = candidate['product_code'].toString();
+                        item.unit = candidate['unit'].toString();
+                        item.quantity.text = formatQuantity(
+                          candidate['quantity'],
+                          item.unit,
+                        );
+                        item.processFromCode = null;
+                        item.processToCode = null;
+                      }),
+                      validator: (value) =>
+                          value == null ? 'Linked product is required' : null,
+                    ),
+                  )
+                else
+                  SizedBox(
+                    width: 310,
+                    child: SearchableSelectField<String>(
+                      value: item.productCode,
+                      labelText: 'Product *',
+                      searchHint: 'Search product',
+                      options: _products
+                          .map(
+                            (product) => SearchableSelectOption(
+                              value: product['code'].toString(),
+                              label: productSelectLabel(product),
+                              searchTerms: [
+                                product['code'].toString(),
+                                product['description']?.toString() ?? '',
+                                product['part_name']?.toString() ?? '',
+                                product['part_no']?.toString() ?? '',
+                              ],
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) =>
+                          setState(() => item.productCode = value),
+                      validator: (value) =>
+                          value == null ? 'Product is required' : null,
+                    ),
                   ),
-                ),
+                if (_orderKind == 'subcontract' && item.productCode != null)
+                  ..._subcontractProcessFields(item, candidates),
                 SizedBox(
                   width: 180,
                   child: TextFormField(
@@ -596,8 +753,9 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
                           ),
                         )
                         .toList(),
-                    onChanged: (value) =>
-                        setState(() => item.unit = value ?? 'pcs'),
+                    onChanged: _salesOrderNumber == null
+                        ? (value) => setState(() => item.unit = value ?? 'pcs')
+                        : null,
                   ),
                 ),
                 SizedBox(
@@ -622,12 +780,67 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
       ),
     );
   }
+
+  List<Widget> _subcontractProcessFields(
+    _OrderItemDraft item,
+    List<Map<String, dynamic>> candidates,
+  ) {
+    final matching = candidates.where(
+      (entry) =>
+          entry['product_code'] == item.productCode &&
+          entry['sales_order_item_id'] == item.salesOrderItemId,
+    );
+    final candidate = matching.isEmpty ? null : matching.first;
+    final stages = List<Map<String, dynamic>>.from(
+      candidate?['process_stages'] as List? ?? const [],
+    );
+    final options = stages
+        .map(
+          (stage) => SearchableSelectOption<String>(
+            value: stage['code'].toString(),
+            label: '${stage['code']} — ${stage['name']}',
+            searchTerms: [
+              stage['code'].toString(),
+              stage['name']?.toString() ?? '',
+            ],
+          ),
+        )
+        .toList();
+    return [
+      SizedBox(
+        width: 240,
+        child: SearchableSelectField<String>(
+          value: item.processFromCode,
+          labelText: 'Subcontract starts after (optional)',
+          searchHint: 'Select completed process',
+          options: options,
+          onChanged: (value) => setState(() => item.processFromCode = value),
+        ),
+      ),
+      SizedBox(
+        width: 240,
+        child: SearchableSelectField<String>(
+          value: item.processToCode,
+          labelText: 'Return at process *',
+          searchHint: 'Select return process',
+          options: options,
+          onChanged: (value) => setState(() => item.processToCode = value),
+          validator: (value) =>
+              value == null ? 'Return process is required' : null,
+        ),
+      ),
+    ];
+  }
 }
 
 class _OrderItemDraft {
   _OrderItemDraft({
     this.id,
     this.productCode,
+    this.salesOrderItemId,
+    this.candidateKey,
+    this.processFromCode,
+    this.processToCode,
     String quantity = '',
     String price = '',
     String remark = '',
@@ -640,6 +853,12 @@ class _OrderItemDraft {
     return _OrderItemDraft(
       id: item.id,
       productCode: item.productCode,
+      salesOrderItemId: item.salesOrderItemId,
+      candidateKey: item.salesOrderItemId == null
+          ? null
+          : '${item.salesOrderItemId}|${item.productCode}',
+      processFromCode: item.processFromCode,
+      processToCode: item.processToCode,
       quantity: formatQuantity(item.quantityGrams, item.unit),
       price: item.unitPrice.toString(),
       remark: item.remark,
@@ -648,6 +867,10 @@ class _OrderItemDraft {
   }
 
   String? productCode;
+  int? salesOrderItemId;
+  String? candidateKey;
+  String? processFromCode;
+  String? processToCode;
   final int? id;
   String unit;
   final TextEditingController quantity;

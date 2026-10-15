@@ -43,6 +43,11 @@ class PurchaseOrderStatus(str, enum.Enum):
     rejected = "rejected"
 
 
+class PurchaseOrderKind(str, enum.Enum):
+    purchase = "purchase"
+    subcontract = "subcontract"
+
+
 class PurchaseRequestStatus(str, enum.Enum):
     waiting_review = "waiting_review"
     approved = "approved"
@@ -130,6 +135,13 @@ class ReceivingStatus(str, enum.Enum):
     reversed = "reversed"
 
 
+class SubcontractDispatchStatus(str, enum.Enum):
+    dispatched = "dispatched"
+    partially_received = "partially_received"
+    received = "received"
+    reversed = "reversed"
+
+
 class InventoryMovementType(str, enum.Enum):
     receiving_in = "receiving_in"
     receiving_reversal = "receiving_reversal"
@@ -172,6 +184,7 @@ class WipLotStatus(str, enum.Enum):
     repair_in_process = "repair_in_process"
     ng = "ng"
     completed = "completed"
+    subcontracted = "subcontracted"
     reversed = "reversed"
 
 
@@ -352,9 +365,7 @@ class Product(Base):
     gross_weight: Mapped[Decimal] = mapped_column(Numeric(14, 3), nullable=False)
     nett_weight: Mapped[Decimal] = mapped_column(Numeric(14, 3), nullable=False)
     default_cycle_time_seconds: Mapped[Decimal | None] = mapped_column(Numeric(14, 3), nullable=True)
-    productivity_percentage: Mapped[Decimal] = mapped_column(
-        Numeric(5, 2), nullable=False, default=Decimal("95")
-    )
+    productivity_percentage: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False, default=Decimal("95"))
     current_stock_grams: Mapped[Decimal] = mapped_column(Numeric(20, 3), nullable=False, default=0)
     category: Mapped[ProductCategory] = mapped_column(
         Enum(ProductCategory, name="product_category_enum"),
@@ -402,6 +413,14 @@ class PurchaseOrder(Base):
     __tablename__ = "purchase_orders"
 
     po_number: Mapped[str] = mapped_column(String(20), primary_key=True)
+    # Nullable only to preserve historical POs. All newly created POs are
+    # required by the API to reference an approved Sales Order.
+    sales_order_number: Mapped[str | None] = mapped_column(
+        ForeignKey("sales_orders.sales_order_number", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    order_kind: Mapped[PurchaseOrderKind] = mapped_column(
+        Enum(PurchaseOrderKind, name="purchase_order_kind_enum"), nullable=False, default=PurchaseOrderKind.purchase
+    )
     po_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     supplier_code: Mapped[str] = mapped_column(
         ForeignKey("corporations.code", ondelete="RESTRICT"), nullable=False, index=True
@@ -471,6 +490,16 @@ class PurchaseOrderItem(Base):
     line_number: Mapped[int] = mapped_column(Integer, nullable=False)
     product_code: Mapped[str] = mapped_column(
         ForeignKey("products.code", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    # Legacy PO lines have no SO allocation; new lines are validated and linked.
+    sales_order_item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("sales_order_items.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    process_from_code: Mapped[str | None] = mapped_column(
+        ForeignKey("wip_processes.code", ondelete="RESTRICT"), nullable=True
+    )
+    process_to_code: Mapped[str | None] = mapped_column(
+        ForeignKey("wip_processes.code", ondelete="RESTRICT"), nullable=True
     )
     part_name: Mapped[str] = mapped_column(String(200), nullable=False)
     part_no: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -548,23 +577,38 @@ class PurchaseRequest(Base):
     __tablename__ = "purchase_requests"
 
     request_number: Mapped[str] = mapped_column(String(20), primary_key=True)
+    sales_order_number: Mapped[str | None] = mapped_column(
+        ForeignKey("sales_orders.sales_order_number", ondelete="RESTRICT"), nullable=True, index=True
+    )
     request_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     requested_delivery_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     delivery_plant_code: Mapped[str | None] = mapped_column(
         ForeignKey("plants.code", ondelete="RESTRICT"), nullable=True, index=True
     )
-    department_code: Mapped[str | None] = mapped_column(ForeignKey("departments.code", ondelete="SET NULL"), nullable=True)
+    department_code: Mapped[str | None] = mapped_column(
+        ForeignKey("departments.code", ondelete="SET NULL"), nullable=True
+    )
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
     status: Mapped[PurchaseRequestStatus] = mapped_column(
-        Enum(PurchaseRequestStatus, name="purchase_request_status_enum"), nullable=False, default=PurchaseRequestStatus.waiting_review, index=True
+        Enum(PurchaseRequestStatus, name="purchase_request_status_enum"),
+        nullable=False,
+        default=PurchaseRequestStatus.waiting_review,
+        index=True,
     )
     created_by: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
     reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    items: Mapped[list["PurchaseRequestItem"]] = relationship(back_populates="purchase_request", cascade="all, delete-orphan", order_by="PurchaseRequestItem.line_number", lazy="selectin")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    items: Mapped[list["PurchaseRequestItem"]] = relationship(
+        back_populates="purchase_request",
+        cascade="all, delete-orphan",
+        order_by="PurchaseRequestItem.line_number",
+        lazy="selectin",
+    )
 
 
 class PurchaseRequestItem(Base):
@@ -572,9 +616,16 @@ class PurchaseRequestItem(Base):
     __table_args__ = (UniqueConstraint("request_number", "line_number", name="uq_purchase_request_item_line"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    request_number: Mapped[str] = mapped_column(ForeignKey("purchase_requests.request_number", ondelete="CASCADE"), nullable=False, index=True)
+    request_number: Mapped[str] = mapped_column(
+        ForeignKey("purchase_requests.request_number", ondelete="CASCADE"), nullable=False, index=True
+    )
     line_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    product_code: Mapped[str] = mapped_column(ForeignKey("products.code", ondelete="RESTRICT"), nullable=False, index=True)
+    product_code: Mapped[str] = mapped_column(
+        ForeignKey("products.code", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    sales_order_item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("sales_order_items.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
     part_name: Mapped[str] = mapped_column(String(200), nullable=False)
     part_no: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
@@ -586,7 +637,9 @@ class PurchaseRequestItem(Base):
     )
     approval_status: Mapped[PurchaseRequestItemApprovalStatus] = mapped_column(
         Enum(PurchaseRequestItemApprovalStatus, name="purchase_request_item_approval_status_enum"),
-        nullable=False, default=PurchaseRequestItemApprovalStatus.pending, index=True,
+        nullable=False,
+        default=PurchaseRequestItemApprovalStatus.pending,
+        index=True,
     )
     approved_quantity: Mapped[Decimal | None] = mapped_column(Numeric(14, 3), nullable=True)
     review_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -865,6 +918,46 @@ class ProductLot(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class SubcontractDispatch(Base):
+    """Auditable shipment of SO material/WIP from our warehouse to a subcontractor."""
+
+    __tablename__ = "subcontract_dispatches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    dispatch_number: Mapped[str] = mapped_column(String(24), unique=True, nullable=False, index=True)
+    purchase_order_item_id: Mapped[int] = mapped_column(
+        ForeignKey("purchase_order_items.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    source_lot_id: Mapped[int | None] = mapped_column(
+        ForeignKey("product_lots.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    source_wip_job_id: Mapped[int | None] = mapped_column(
+        ForeignKey("wip_lot_jobs.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    product_code: Mapped[str] = mapped_column(ForeignKey("products.code", ondelete="RESTRICT"), nullable=False)
+    lot_number: Mapped[str] = mapped_column(String(100), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(20, 3), nullable=False)
+    unit: Mapped[str] = mapped_column(String(10), nullable=False)
+    expected_output_quantity: Mapped[Decimal] = mapped_column(Numeric(20, 3), nullable=False)
+    source_process_code: Mapped[str | None] = mapped_column(
+        ForeignKey("wip_processes.code", ondelete="RESTRICT"), nullable=True
+    )
+    process_to_code: Mapped[str] = mapped_column(ForeignKey("wip_processes.code", ondelete="RESTRICT"), nullable=False)
+    subcontractor_code: Mapped[str] = mapped_column(
+        ForeignKey("corporations.code", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    status: Mapped[SubcontractDispatchStatus] = mapped_column(
+        Enum(SubcontractDispatchStatus, name="subcontract_dispatch_status_enum"),
+        nullable=False,
+        default=SubcontractDispatchStatus.dispatched,
+        index=True,
+    )
+    returned_quantity: Mapped[Decimal] = mapped_column(Numeric(20, 3), nullable=False, default=0)
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    dispatched_by: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    dispatched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class DailyStockRebalancingSequence(Base):
     __tablename__ = "daily_stock_rebalancing_sequences"
 
@@ -890,7 +983,9 @@ class StockRebalancingLine(Base):
     __table_args__ = (UniqueConstraint("rebalance_number", "line_number", name="uq_stock_rebalance_line"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    rebalance_number: Mapped[str] = mapped_column(ForeignKey("stock_rebalancings.rebalance_number", ondelete="RESTRICT"), nullable=False, index=True)
+    rebalance_number: Mapped[str] = mapped_column(
+        ForeignKey("stock_rebalancings.rebalance_number", ondelete="RESTRICT"), nullable=False, index=True
+    )
     line_number: Mapped[int] = mapped_column(Integer, nullable=False)
     lot_id: Mapped[int] = mapped_column(ForeignKey("product_lots.id", ondelete="RESTRICT"), nullable=False, index=True)
     product_code: Mapped[str] = mapped_column(String(30), nullable=False)
@@ -1049,6 +1144,9 @@ class ProductionExecution(Base):
     machine_code: Mapped[str | None] = mapped_column(ForeignKey("machines.code", ondelete="RESTRICT"), nullable=True)
     machine_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     processing_quantity: Mapped[Decimal] = mapped_column(Numeric(20, 3), nullable=False)
+    bom_consumable_quantity: Mapped[Decimal] = mapped_column(
+        Numeric(20, 3), nullable=False, default=Decimal("0"), server_default="0"
+    )
     good_quantity: Mapped[Decimal] = mapped_column(Numeric(20, 3), nullable=False, default=0)
     repair_quantity: Mapped[Decimal] = mapped_column(Numeric(20, 3), nullable=False, default=0)
     ng_quantity: Mapped[Decimal] = mapped_column(Numeric(20, 3), nullable=False, default=0)
@@ -1092,7 +1190,9 @@ class QrLabel(Base):
     created_by: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
     created_by_name: Mapped[str] = mapped_column(String(201), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class DailyQualitySequence(Base):
@@ -1305,6 +1405,9 @@ class Receiving(Base):
     )
     purchase_order_item_id: Mapped[int | None] = mapped_column(
         ForeignKey("purchase_order_items.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    subcontract_dispatch_id: Mapped[int | None] = mapped_column(
+        ForeignKey("subcontract_dispatches.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     sales_order_item_id: Mapped[int | None] = mapped_column(
         ForeignKey("sales_order_items.id", ondelete="RESTRICT"), nullable=True, index=True

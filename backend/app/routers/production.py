@@ -42,6 +42,7 @@ from app.operational_services import (
     target_outcome_quantity,
 )
 from app.production_services import (
+    bom_consumable_input_equivalent,
     child_segment_code,
     ensure_production_execution_reversible,
     generate_production_number,
@@ -340,7 +341,11 @@ async def execution_response(db: AsyncSession, record: ProductionExecution) -> P
         target_productivity_percentage=getattr(record, "target_productivity_percentage", None),
         target_outcome_quantity=target_outcome,
         outcome_achievement_percentage=achievement,
-        on_target=(record.ended_at <= record.target_finish_at if getattr(record, "target_finish_at", None) and record.ended_at else None),
+        on_target=(
+            record.ended_at <= record.target_finish_at
+            if getattr(record, "target_finish_at", None) and record.ended_at
+            else None
+        ),
         job_id=record.job_id,
         product_code=record.product_code,
         product_name=record.product_name,
@@ -357,6 +362,7 @@ async def execution_response(db: AsyncSession, record: ProductionExecution) -> P
         machine_code=record.machine_code,
         machine_name=record.machine_name,
         processing_quantity=record.processing_quantity,
+        bom_consumable_quantity=getattr(record, "bom_consumable_quantity", Decimal("0")),
         good_quantity=record.good_quantity,
         repair_quantity=record.repair_quantity,
         ng_quantity=record.ng_quantity,
@@ -648,6 +654,7 @@ async def complete_wip_job(
     if not output_product:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Output Product not found")
     is_bom_conversion = output_product.code != job.product_code
+    bom_consumable = Decimal("0")
     if is_bom_conversion:
         bom = await db.get(BillOfMaterial, output_product.code)
         bom_items = list(
@@ -669,15 +676,25 @@ async def complete_wip_job(
         if matching_item.unit != job.unit or not bom.output_unit:
             raise HTTPException(status_code=422, detail="BOM input/output units do not match this WIP conversion")
         output_unit = bom.output_unit
-        for value, label in ((repair, "Repair Quantity"), (ng, "NG Quantity")):
+        for value, label in (
+            (data.good_quantity, "Good Output Quantity"),
+            (repair, "Repair Quantity"),
+            (ng, "NG Quantity"),
+        ):
             require_whole_quantity(value, output_unit, label)
         converted_quantity = quantity(processing * bom.output_quantity / matching_item.quantity)
-        if repair + ng > converted_quantity:
-            raise HTTPException(422, detail="Repair and NG Quantity cannot exceed converted Output Quantity")
-        good = quantity(converted_quantity - repair - ng)
-        require_whole_quantity(good, output_unit, "Good Output Quantity")
-        if quantity(data.good_quantity) != good:
-            raise HTTPException(status_code=422, detail="Good Output Quantity must match the BOM conversion result")
+        good = quantity(data.good_quantity)
+        try:
+            bom_consumable = bom_consumable_input_equivalent(
+                processing,
+                matching_item.quantity,
+                bom.output_quantity,
+                good,
+                repair,
+                ng,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
     else:
         for value, label in ((repair, "Repair Quantity"), (ng, "NG Quantity")):
             require_whole_quantity(value, job.unit, label)
@@ -783,6 +800,7 @@ async def complete_wip_job(
         machine_code=machine.code if machine else None,
         machine_name=machine.name if machine else None,
         processing_quantity=processing,
+        bom_consumable_quantity=bom_consumable,
         good_quantity=good,
         repair_quantity=repair,
         ng_quantity=ng,
@@ -889,9 +907,7 @@ async def reverse_production_execution(
     ).scalar_one()
     children = list(
         (
-            await db.execute(
-                select(WipLotJob).where(WipLotJob.production_execution_id == record.id).with_for_update()
-            )
+            await db.execute(select(WipLotJob).where(WipLotJob.production_execution_id == record.id).with_for_update())
         ).scalars()
     )
     child_ids = [child.id for child in children]
@@ -904,32 +920,37 @@ async def reverse_production_execution(
     )
     has_downstream_activity = False
     if child_ids:
-        has_downstream_activity = bool(
-            await db.scalar(
-                select(func.count())
-                .select_from(WipLotJob)
-                .where(WipLotJob.parent_job_id.in_(child_ids), WipLotJob.status != WipLotStatus.reversed)
-            )
-        ) or bool(
-            await db.scalar(
-                select(func.count())
-                .select_from(QualityInspection)
-                .where(QualityInspection.job_id.in_(child_ids), QualityInspection.reversed_at.is_(None))
-            )
-        ) or bool(
-            await db.scalar(
-                select(func.count())
-                .select_from(FinishGoodReceipt)
-                .where(
-                    FinishGoodReceipt.source_wip_job_id.in_(child_ids),
-                    FinishGoodReceipt.status == FinishGoodStatus.posted,
+        has_downstream_activity = (
+            bool(
+                await db.scalar(
+                    select(func.count())
+                    .select_from(WipLotJob)
+                    .where(WipLotJob.parent_job_id.in_(child_ids), WipLotJob.status != WipLotStatus.reversed)
                 )
             )
-        ) or bool(
-            await db.scalar(
-                select(func.count())
-                .select_from(ProductionExecution)
-                .where(ProductionExecution.job_id.in_(child_ids), ProductionExecution.reversed_at.is_(None))
+            or bool(
+                await db.scalar(
+                    select(func.count())
+                    .select_from(QualityInspection)
+                    .where(QualityInspection.job_id.in_(child_ids), QualityInspection.reversed_at.is_(None))
+                )
+            )
+            or bool(
+                await db.scalar(
+                    select(func.count())
+                    .select_from(FinishGoodReceipt)
+                    .where(
+                        FinishGoodReceipt.source_wip_job_id.in_(child_ids),
+                        FinishGoodReceipt.status == FinishGoodStatus.posted,
+                    )
+                )
+            )
+            or bool(
+                await db.scalar(
+                    select(func.count())
+                    .select_from(ProductionExecution)
+                    .where(ProductionExecution.job_id.in_(child_ids), ProductionExecution.reversed_at.is_(None))
+                )
             )
         )
     try:
@@ -946,7 +967,9 @@ async def reverse_production_execution(
         audit_child_ids.update(
             (
                 await db.execute(
-                    select(FinishGoodReceipt.source_wip_job_id).where(FinishGoodReceipt.source_wip_job_id.in_(child_ids))
+                    select(FinishGoodReceipt.source_wip_job_id).where(
+                        FinishGoodReceipt.source_wip_job_id.in_(child_ids)
+                    )
                 )
             )
             .scalars()

@@ -15,6 +15,18 @@ def is_purchasing_path(path: str) -> bool:
     return path == prefix or path.startswith(f"{prefix}/")
 
 
+def is_warehouse_subcontract_path(path: str) -> bool:
+    """Warehouse-only subcontract actions hosted by the purchasing router."""
+    prefix = f"{settings.api_prefix}/purchasing/"
+    if not path.startswith(prefix):
+        return False
+    endpoint = path.removeprefix(prefix)
+    return endpoint in {
+        "subcontract-source-lots",
+        "subcontract-orders-for-dispatch",
+    } or (endpoint.count("/") == 1 and endpoint.endswith("/subcontract-dispatches"))
+
+
 def is_sales_order_path(path: str) -> bool:
     prefix = f"{settings.api_prefix}/sales-orders"
     return path == prefix or path.startswith(f"{prefix}/")
@@ -58,7 +70,9 @@ def is_delivery_path(path: str) -> bool:
 class DepartmentModuleMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         protected_module: tuple[str, str, bool] | None = None
-        if is_purchasing_path(request.url.path):
+        if is_warehouse_subcontract_path(request.url.path):
+            protected_module = (settings.warehouse_department_code, "Warehouse", True)
+        elif is_purchasing_path(request.url.path):
             protected_module = (settings.purchasing_department_code, "Purchasing", False)
         elif is_sales_order_path(request.url.path) or is_quotation_path(request.url.path):
             protected_module = (settings.sales_department_code, "Sales", False)

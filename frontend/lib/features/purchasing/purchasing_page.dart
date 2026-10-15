@@ -714,7 +714,24 @@ class _PurchasingPageState extends State<PurchasingPage> {
                         ),
                       ),
                     ),
-                    DataCell(Text(order.quantitySummary)),
+                    DataCell(
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(order.quantitySummary),
+                          if (order.hasExcess)
+                            Text(
+                              'Excess ${order.excessSummary}',
+                              style: const TextStyle(
+                                color: Color(0xFFB54708),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                     DataCell(Text(_formatNumber(order.grandTotal))),
                     DataCell(
                       Text(
@@ -765,9 +782,15 @@ class _PurchasingPageState extends State<PurchasingPage> {
                   ),
                   const SizedBox(height: 10),
                   Text('${order.supplierCode} — ${order.supplierName}'),
+                  if (order.salesOrderNumber != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '${order.salesOrderNumber} • ${order.orderKind == 'subcontract' ? 'Subcontract' : 'Purchase'}',
+                    ),
+                  ],
                   const SizedBox(height: 4),
                   Text(
-                    '${order.items.length} item • ${order.quantitySummary} • IDR ${_formatNumber(order.grandTotal)}',
+                    '${order.items.length} item • ${order.quantitySummary} • IDR ${_formatNumber(order.grandTotal)}${order.hasExcess ? ' • Excess ${order.excessSummary}' : ''}',
                     style: const TextStyle(color: Color(0xFF667085)),
                   ),
                   const Divider(height: 24),
@@ -877,6 +900,16 @@ class _PurchasingPageState extends State<PurchasingPage> {
                   runSpacing: 14,
                   children: [
                     _detail('PO Date', _formatDate(order.poDate)),
+                    _detail(
+                      'Sales Order',
+                      order.salesOrderNumber ?? 'Legacy PO',
+                    ),
+                    _detail(
+                      'PO Type',
+                      order.orderKind == 'subcontract'
+                          ? 'Subcontract'
+                          : 'Purchase',
+                    ),
                     _detail('Supplier Code', order.supplierCode),
                     _detail('Supplier', order.supplierName),
                     _detail('Quotation', order.quotationReference ?? '-'),
@@ -913,6 +946,7 @@ class _PurchasingPageState extends State<PurchasingPage> {
                       DataColumn(label: Text('AMOUNT')),
                       DataColumn(label: Text('RECEIVED')),
                       DataColumn(label: Text('OUTSTANDING')),
+                      DataColumn(label: Text('EXCESS')),
                       DataColumn(label: Text('REMARK')),
                     ],
                     rows: order.items.indexed
@@ -946,6 +980,19 @@ class _PurchasingPageState extends State<PurchasingPage> {
                               DataCell(
                                 Text(
                                   _formatNumber(entry.$2.outstandingQuantity),
+                                ),
+                              ),
+                              DataCell(
+                                Text(
+                                  entry.$2.excessQuantity > 0
+                                      ? '${_formatNumber(entry.$2.excessQuantity)} ${unitLabel(entry.$2.unit)}'
+                                      : '-',
+                                  style: entry.$2.excessQuantity > 0
+                                      ? const TextStyle(
+                                          color: Color(0xFFB54708),
+                                          fontWeight: FontWeight.w600,
+                                        )
+                                      : null,
                                 ),
                               ),
                               DataCell(

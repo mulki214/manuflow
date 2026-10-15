@@ -2,6 +2,9 @@ class PurchaseOrderItemModel {
   const PurchaseOrderItemModel({
     required this.id,
     required this.productCode,
+    required this.salesOrderItemId,
+    required this.processFromCode,
+    required this.processToCode,
     required this.partName,
     required this.partNo,
     required this.description,
@@ -9,6 +12,7 @@ class PurchaseOrderItemModel {
     required this.unit,
     required this.receivedQuantity,
     required this.outstandingQuantity,
+    required this.excessQuantity,
     required this.unitPrice,
     required this.amount,
     required this.remark,
@@ -18,6 +22,9 @@ class PurchaseOrderItemModel {
     return PurchaseOrderItemModel(
       id: json['id'] as int,
       productCode: json['product_code'].toString(),
+      salesOrderItemId: json['sales_order_item_id'] as int?,
+      processFromCode: json['process_from_code']?.toString(),
+      processToCode: json['process_to_code']?.toString(),
       partName: json['part_name'].toString(),
       partNo: json['part_no'].toString(),
       description: json['description'].toString(),
@@ -25,6 +32,7 @@ class PurchaseOrderItemModel {
       unit: json['unit'].toString(),
       receivedQuantity: _number(json['received_quantity']),
       outstandingQuantity: _number(json['outstanding_quantity']),
+      excessQuantity: _number(json['excess_quantity'] ?? 0),
       unitPrice: _number(json['unit_price']),
       amount: _number(json['amount']),
       remark: json['remark']?.toString() ?? '',
@@ -33,6 +41,9 @@ class PurchaseOrderItemModel {
 
   final int id;
   final String productCode;
+  final int? salesOrderItemId;
+  final String? processFromCode;
+  final String? processToCode;
   final String partName;
   final String partNo;
   final String description;
@@ -40,6 +51,7 @@ class PurchaseOrderItemModel {
   final String unit;
   final double receivedQuantity;
   final double outstandingQuantity;
+  final double excessQuantity;
   final double unitPrice;
   final double amount;
   final String remark;
@@ -48,6 +60,8 @@ class PurchaseOrderItemModel {
 class PurchaseOrderModel {
   const PurchaseOrderModel({
     required this.poNumber,
+    required this.salesOrderNumber,
+    required this.orderKind,
     required this.poDate,
     required this.supplierCode,
     required this.supplierName,
@@ -83,6 +97,8 @@ class PurchaseOrderModel {
   factory PurchaseOrderModel.fromJson(Map<String, dynamic> json) {
     return PurchaseOrderModel(
       poNumber: json['po_number'].toString(),
+      salesOrderNumber: json['sales_order_number']?.toString(),
+      orderKind: json['order_kind']?.toString() ?? 'purchase',
       poDate: DateTime.parse(json['po_date'].toString()),
       supplierCode: json['supplier_code'].toString(),
       supplierName: json['supplier_name'].toString(),
@@ -126,6 +142,8 @@ class PurchaseOrderModel {
   }
 
   final String poNumber;
+  final String? salesOrderNumber;
+  final String orderKind;
   final DateTime poDate;
   final String supplierCode;
   final String supplierName;
@@ -166,6 +184,12 @@ class PurchaseOrderModel {
   String get quantitySummary => _unitSummary(
     items.map((item) => (unit: item.unit, quantity: item.quantityGrams)),
   );
+  String get excessSummary => _unitSummary(
+    items
+        .where((item) => item.excessQuantity > 0)
+        .map((item) => (unit: item.unit, quantity: item.excessQuantity)),
+  );
+  bool get hasExcess => items.any((item) => item.excessQuantity > 0);
 }
 
 String _unitSummary(Iterable<({String unit, double quantity})> values) {

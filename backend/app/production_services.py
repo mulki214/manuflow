@@ -57,6 +57,25 @@ def validate_execution_quantities(
     return values
 
 
+def bom_consumable_input_equivalent(
+    processing: Decimal,
+    input_per_batch: Decimal,
+    output_per_batch: Decimal,
+    good: Decimal,
+    repair: Decimal,
+    ng: Decimal,
+) -> Decimal:
+    """Return BOM yield variance as equivalent source-material quantity."""
+    if input_per_batch <= 0 or output_per_batch <= 0:
+        raise ValueError("BOM input and output quantities must be greater than zero")
+    expected_output = quantity(processing * output_per_batch / input_per_batch)
+    actual_output = quantity(good + repair + ng)
+    if actual_output > expected_output:
+        raise ValueError("Good, Repair, and NG output cannot exceed BOM converted quantity")
+    variance_output = quantity(expected_output - actual_output)
+    return quantity(variance_output * input_per_batch / output_per_batch)
+
+
 def next_job_status(remaining_quantity: Decimal) -> WipLotStatus:
     return WipLotStatus.queued if quantity(remaining_quantity) > 0 else WipLotStatus.completed
 

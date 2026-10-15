@@ -9,6 +9,8 @@ import '../../shared/modal_widgets.dart';
 import '../../shared/units.dart';
 import '../auth/auth_controller.dart';
 import '../master_data/master_data_page.dart';
+import '../purchasing/purchase_order_models.dart';
+import '../purchasing/subcontract_dispatch_dialog.dart';
 import '../production/production_page.dart';
 import '../quality/quality_page.dart';
 import '../purchasing/purchasing_page.dart';
@@ -30,6 +32,7 @@ class WarehousePage extends StatefulWidget {
 class _WarehousePageState extends State<WarehousePage> {
   final _search = TextEditingController();
   List<WarehouseTransferModel> _transfers = [];
+  List<PurchaseOrderModel> _subcontractOrders = [];
   bool _checking = true;
   bool _allowed = false;
   bool _loading = false;
@@ -40,6 +43,9 @@ class _WarehousePageState extends State<WarehousePage> {
   DateTime? _to;
   int _page = 1;
   int _total = 0;
+  bool _subcontractLoading = false;
+  String? _subcontractError;
+  int _selectedTab = 0;
   final int _size = 10;
 
   int get _pages => _total == 0 ? 1 : (_total / _size).ceil();
@@ -106,6 +112,44 @@ class _WarehousePageState extends State<WarehousePage> {
       }
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadSubcontractOrders() async {
+    setState(() {
+      _subcontractLoading = true;
+      _subcontractError = null;
+    });
+    try {
+      final response = await widget.auth.api.getJson(
+        '/purchasing/subcontract-orders-for-dispatch?page=1&size=100',
+      );
+      if (!mounted) return;
+      setState(() {
+        _subcontractOrders = (response['items'] as List)
+            .map(
+              (item) =>
+                  PurchaseOrderModel.fromJson(item as Map<String, dynamic>),
+            )
+            .toList();
+      });
+    } on ApiException catch (exception) {
+      if (mounted) setState(() => _subcontractError = exception.message);
+    } finally {
+      if (mounted) setState(() => _subcontractLoading = false);
+    }
+  }
+
+  Future<void> _dispatchSubcontract(PurchaseOrderModel order) async {
+    final done = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) =>
+          SubcontractDispatchDialog(api: widget.auth.api, order: order),
+    );
+    if (done == true) {
+      await _loadSubcontractOrders();
+      _message('Material/WIP dispatched to subcontractor.');
     }
   }
 
@@ -251,7 +295,9 @@ class _WarehousePageState extends State<WarehousePage> {
               ),
             ),
             body: content,
-            floatingActionButton: supportsMobileProductScanner
+            floatingActionButton: _selectedTab == 1
+                ? null
+                : supportsMobileProductScanner
                 ? FloatingActionButton.extended(
                     onPressed: _scanTransfer,
                     icon: const Icon(Icons.qr_code_scanner),
@@ -307,19 +353,23 @@ class _WarehousePageState extends State<WarehousePage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Warehouse / Storage Material',
+                      _selectedTab == 0
+                          ? 'Warehouse / Storage Material'
+                          : 'Subcontract Dispatch',
                       style: Theme.of(context).textTheme.headlineSmall
                           ?.copyWith(fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '$_total material transfers',
+                      _selectedTab == 0
+                          ? '$_total material transfers'
+                          : '${_subcontractOrders.length} subcontract POs ready to dispatch',
                       style: const TextStyle(color: Color(0xFF667085)),
                     ),
                   ],
                 ),
               ),
-              if (desktop) ...[
+              if (desktop && _selectedTab == 0) ...[
                 if (supportsMobileProductScanner)
                   IconButton(
                     tooltip: 'Scan Product / Lot QR',
@@ -332,98 +382,125 @@ class _WarehousePageState extends State<WarehousePage> {
                   label: const Text('Create Transfer'),
                 ),
               ],
+              if (desktop && _selectedTab == 1)
+                IconButton(
+                  tooltip: 'Refresh subcontract orders',
+                  onPressed: _loadSubcontractOrders,
+                  icon: const Icon(Icons.refresh),
+                ),
             ],
           ),
           const SizedBox(height: 14),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  SizedBox(
-                    width: 330,
-                    child: TextField(
-                      controller: _search,
-                      onSubmitted: (_) => _load(),
-                      decoration: const InputDecoration(
-                        prefixIcon: Icon(Icons.search),
-                        hintText: 'Search number, product, lot, or process...',
-                        isDense: true,
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 150,
-                    child: DropdownButtonFormField<String?>(
-                      initialValue: _status,
-                      decoration: const InputDecoration(
-                        labelText: 'Status',
-                        isDense: true,
-                      ),
-                      items: const [
-                        DropdownMenuItem(value: null, child: Text('All')),
-                        DropdownMenuItem(
-                          value: 'posted',
-                          child: Text('Posted'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'reversed',
-                          child: Text('Reversed'),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        _status = value;
-                        _page = 1;
-                        _load();
-                      },
-                    ),
-                  ),
-                  SizedBox(
-                    width: 180,
-                    child: DropdownButtonFormField<String?>(
-                      initialValue: _destination,
-                      decoration: const InputDecoration(
-                        labelText: 'Destination',
-                        isDense: true,
-                      ),
-                      items: const [
-                        DropdownMenuItem(value: null, child: Text('All')),
-                        DropdownMenuItem(value: 'wip', child: Text('WIP')),
-                        DropdownMenuItem(
-                          value: 'finished_goods',
-                          child: Text('Finished Goods'),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        _destination = value;
-                        _page = 1;
-                        _load();
-                      },
-                    ),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _pickRange,
-                    icon: const Icon(Icons.date_range),
-                    label: Text(
-                      _from == null
-                          ? 'Date Range'
-                          : '${_date(_from!)} – ${_date(_to!)}',
-                    ),
-                  ),
-                  IconButton.filledTonal(
-                    onPressed: _load,
-                    icon: const Icon(Icons.search),
-                  ),
-                ],
-              ),
-            ),
+          SegmentedButton<int>(
+            segments: const [
+              ButtonSegment(value: 0, label: Text('Material Transfers')),
+              ButtonSegment(value: 1, label: Text('Subcontract Dispatch')),
+            ],
+            selected: {_selectedTab},
+            onSelectionChanged: (selection) {
+              final selected = selection.first;
+              setState(() => _selectedTab = selected);
+              if (selected == 0) {
+                _load();
+              } else {
+                _loadSubcontractOrders();
+              }
+            },
           ),
           const SizedBox(height: 14),
-          Expanded(child: _body(desktop)),
-          if (!_loading && _error == null)
+          if (_selectedTab == 0)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 330,
+                      child: TextField(
+                        controller: _search,
+                        onSubmitted: (_) => _load(),
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.search),
+                          hintText:
+                              'Search number, product, lot, or process...',
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 150,
+                      child: DropdownButtonFormField<String?>(
+                        initialValue: _status,
+                        decoration: const InputDecoration(
+                          labelText: 'Status',
+                          isDense: true,
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: null, child: Text('All')),
+                          DropdownMenuItem(
+                            value: 'posted',
+                            child: Text('Posted'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'reversed',
+                            child: Text('Reversed'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          _status = value;
+                          _page = 1;
+                          _load();
+                        },
+                      ),
+                    ),
+                    SizedBox(
+                      width: 180,
+                      child: DropdownButtonFormField<String?>(
+                        initialValue: _destination,
+                        decoration: const InputDecoration(
+                          labelText: 'Destination',
+                          isDense: true,
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: null, child: Text('All')),
+                          DropdownMenuItem(value: 'wip', child: Text('WIP')),
+                          DropdownMenuItem(
+                            value: 'finished_goods',
+                            child: Text('Finished Goods'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          _destination = value;
+                          _page = 1;
+                          _load();
+                        },
+                      ),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: _pickRange,
+                      icon: const Icon(Icons.date_range),
+                      label: Text(
+                        _from == null
+                            ? 'Date Range'
+                            : '${_date(_from!)} – ${_date(_to!)}',
+                      ),
+                    ),
+                    IconButton.filledTonal(
+                      onPressed: _load,
+                      icon: const Icon(Icons.search),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          if (_selectedTab == 0) const SizedBox(height: 14),
+          Expanded(
+            child: _selectedTab == 0 ? _body(desktop) : _subcontractBody(),
+          ),
+          if (_selectedTab == 0 && !_loading && _error == null)
             CrudPaginationBar(
               currentPage: _page,
               totalPages: _pages,
@@ -453,6 +530,106 @@ class _WarehousePageState extends State<WarehousePage> {
       return const Center(child: Text('No Material Transfers found.'));
     }
     return desktop ? _table() : _cards();
+  }
+
+  Widget _subcontractBody() {
+    if (_subcontractLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_subcontractError != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(_subcontractError!),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _loadSubcontractOrders,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+    if (_subcontractOrders.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _loadSubcontractOrders,
+        child: ListView(
+          children: const [
+            SizedBox(height: 180),
+            Center(
+              child: Text('No approved subcontract POs ready to dispatch.'),
+            ),
+          ],
+        ),
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: _loadSubcontractOrders,
+      child: ListView.separated(
+        padding: const EdgeInsets.only(bottom: 24),
+        itemCount: _subcontractOrders.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 10),
+        itemBuilder: (context, index) {
+          final order = _subcontractOrders[index];
+          final processRange = order.items
+              .map((item) {
+                final before = item.processFromCode ?? 'Start';
+                final after = item.processToCode ?? 'Next process';
+                return '$before → $after';
+              })
+              .toSet()
+              .join(' • ');
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                runSpacing: 12,
+                children: [
+                  SizedBox(
+                    width: 560,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          order.poNumber,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text('${order.supplierCode} — ${order.supplierName}'),
+                        Text(
+                          'SO ${order.salesOrderNumber ?? '-'} • $processRange',
+                        ),
+                        Text(
+                          order.items
+                              .map(
+                                (item) =>
+                                    '${item.partName}: ${item.outstandingQuantity} ${item.unit}',
+                              )
+                              .join(' • '),
+                          style: const TextStyle(color: Color(0xFF667085)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  FilledButton.icon(
+                    onPressed: () => _dispatchSubcontract(order),
+                    icon: const Icon(Icons.local_shipping_outlined),
+                    label: const Text('Dispatch'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 
   Widget _table() => Card(
@@ -500,7 +677,9 @@ class _WarehousePageState extends State<WarehousePage> {
                   ),
                   DataCell(Text(item.lotNumber)),
                   DataCell(
-                    Text('${_number(item.quantity)} ${unitLabel(item.unit)}'),
+                    Text(
+                      '${formatQuantity(item.quantity, item.unit)} ${unitLabel(item.unit)}',
+                    ),
                   ),
                   DataCell(Text(item.plantName)),
                   DataCell(Text(item.source)),
@@ -534,7 +713,7 @@ class _WarehousePageState extends State<WarehousePage> {
             onTap: () => _detail(item),
             title: Text(item.number),
             subtitle: Text(
-              '${item.description}\nLot ${item.lotNumber} • ${_number(item.quantity)} ${unitLabel(item.unit)}\n${item.source} → ${item.destination}',
+              '${item.description}\nLot ${item.lotNumber} • ${formatQuantity(item.quantity, item.unit)} ${unitLabel(item.unit)}\n${item.source} → ${item.destination}',
             ),
             isThreeLine: true,
             trailing: _statusChip(item.status),
@@ -568,7 +747,7 @@ class _WarehousePageState extends State<WarehousePage> {
                 _detailItem('Lot', item.lotNumber),
                 _detailItem(
                   'Quantity',
-                  '${_number(item.quantity)} ${unitLabel(item.unit)}',
+                  '${formatQuantity(item.quantity, item.unit)} ${unitLabel(item.unit)}',
                 ),
                 _detailItem('Plant', item.plantName),
                 _detailItem('Before Process', item.source),
@@ -653,7 +832,4 @@ class _WarehousePageState extends State<WarehousePage> {
       '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
   String _date(DateTime value) =>
       '${value.day.toString().padLeft(2, '0')}/${value.month.toString().padLeft(2, '0')}/${value.year}';
-  String _number(double value) => value == value.truncateToDouble()
-      ? value.toInt().toString()
-      : value.toString();
 }

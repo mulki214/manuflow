@@ -38,6 +38,7 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
   String? _supplierCode;
   String? _customerCode;
   int? _sourceItemId;
+  int? _subcontractDispatchId;
   String? _transportationCode;
   String? _plantCode;
   String? _locationCode;
@@ -78,7 +79,7 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
         .where((item) => item['product_code'] == scan.productCode)
         .toList();
     if (matches.length != 1) return;
-    _selectSourceItem(matches.single['item_id'] as int);
+    _selectSourceItem(_sourceOptionValue(matches.single));
     if (scan.lotNumber != null && _lot.text.trim().isEmpty) {
       _lot.text = scan.lotNumber!;
     }
@@ -159,6 +160,7 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
       _supplierCode = null;
       _customerCode = null;
       _sourceItemId = null;
+      _subcontractDispatchId = null;
       _sourceItems = [];
       _description = '-';
       _documentNumber = '-';
@@ -170,6 +172,7 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
   void _resetSourceItem() {
     setState(() {
       _sourceItemId = null;
+      _subcontractDispatchId = null;
       _sourceItems = [];
       _description = '-';
       _documentNumber = '-';
@@ -208,7 +211,9 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
       return;
     }
     try {
-      final sourceType = _documentType == 'sales_order'
+      final sourceType =
+          _documentType == 'sales_order' ||
+              _documentType == 'subcontract_return'
           ? 'supplier'
           : 'customer';
       final response = await widget.auth.api.getJson(
@@ -239,9 +244,12 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
 
   void _selectSourceItem(int? value) {
     if (value == null) return;
-    final item = _sourceItems.firstWhere((entry) => entry['item_id'] == value);
+    final item = _sourceItems.firstWhere(
+      (entry) => _sourceOptionValue(entry) == value,
+    );
     setState(() {
-      _sourceItemId = value;
+      _sourceItemId = item['item_id'] as int;
+      _subcontractDispatchId = item['subcontract_dispatch_id'] as int?;
       _description = item['product_description'].toString();
       _documentNumber = item['document_number'].toString();
       _unit = item['unit'].toString();
@@ -249,6 +257,11 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
           '${formatQuantity(item['outstanding_quantity'], _unit)} ${unitLabel(_unit)}';
     });
   }
+
+  int _sourceOptionValue(Map<String, dynamic> item) =>
+      _documentType == 'subcontract_return'
+      ? item['subcontract_dispatch_id'] as int
+      : item['item_id'] as int;
 
   String _date(DateTime value) =>
       '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
@@ -290,9 +303,14 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
     try {
       await widget.auth.api.postJson('/receiving', {
         'receipt_date': _date(_receiptDate),
-        'source_type': _documentType == 'sales_order' ? 'supplier' : 'customer',
+        'source_type':
+            _documentType == 'sales_order' ||
+                _documentType == 'subcontract_return'
+            ? 'supplier'
+            : 'customer',
         'source_code': _supplierCode,
         'source_document_item_id': _sourceItemId,
+        'subcontract_dispatch_id': _subcontractDispatchId,
         'document_type': _documentType,
         'customer_code': _customerCode,
         'lot_number': _lot.text.trim(),
@@ -416,6 +434,10 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
                       value: 'sales_order',
                       child: Text('Sales Order (SO)'),
                     ),
+                    DropdownMenuItem(
+                      value: 'subcontract_return',
+                      child: Text('Subcontract Return'),
+                    ),
                   ],
                   onChanged: _selectDocumentType,
                 ),
@@ -501,15 +523,19 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
               SizedBox(
                 width: 584,
                 child: SearchableSelectField<int>(
-                  value: _sourceItemId,
+                  value: _documentType == 'subcontract_return'
+                      ? _subcontractDispatchId
+                      : _sourceItemId,
                   labelText: _documentType == 'sales_order'
                       ? 'Outstanding SO Receiving Item *'
+                      : _documentType == 'subcontract_return'
+                      ? 'Outstanding Subcontract Return *'
                       : 'Outstanding PO Item *',
                   searchHint: 'Search order or product',
                   options: _visibleSourceItems
                       .map(
                         (item) => SearchableSelectOption(
-                          value: item['item_id'] as int,
+                          value: _sourceOptionValue(item),
                           label: orderItemSelectLabel(
                             item,
                             quantity:
@@ -562,6 +588,14 @@ class _ReceivingFormDialogState extends State<ReceivingFormDialog> {
                   child: Text(_outstanding),
                 ),
               ),
+              if (_documentType == 'subcontract_return')
+                const SizedBox(
+                  width: 584,
+                  child: Text(
+                    'Actual returned quantity may exceed expected output. Excess will be received into stock and shown on the Purchase Order; PO fulfillment closes at the ordered quantity.',
+                    style: TextStyle(color: Color(0xFF667085)),
+                  ),
+                ),
               _box(
                 SearchableSelectField<String>(
                   value: _plantCode,
