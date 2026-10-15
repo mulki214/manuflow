@@ -46,6 +46,9 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
   Map<String, dynamic>? _outputBom;
   bool _loading = true;
   bool _saving = false;
+  bool _goodManuallyAdjusted = false;
+  bool _updatingDerivedGood = false;
+  bool _updatingDerivedProcessing = false;
   String? _error;
 
   bool get _isMultiStageProduct => _products.any(
@@ -61,15 +64,17 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
     _good.text = _number(widget.job.currentQuantity);
     _outputProduct = widget.job.productCode;
     _outputUnit = widget.job.unit;
-    for (final controller in [
-      _processing,
-      _good,
-      _repair,
-      _ng,
-      _startTime,
-      _endTime,
-      _breakMinutes,
-    ]) {
+    _processing.addListener(_onProcessingChanged);
+    _repair.addListener(_onRepairOrNgChanged);
+    _ng.addListener(_onRepairOrNgChanged);
+    _good.addListener(() {
+      if (!_updatingDerivedGood && _isBomConversion) {
+        _goodManuallyAdjusted = true;
+        _syncProcessingFromOutcomes();
+      }
+      if (mounted) setState(() {});
+    });
+    for (final controller in [_startTime, _endTime, _breakMinutes]) {
       controller.addListener(() {
         if (mounted) setState(() {});
       });
@@ -142,6 +147,65 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
       _outputProduct != null &&
       _outputProduct != widget.job.productCode;
 
+  void _onProcessingChanged() {
+    if (_updatingDerivedProcessing) {
+      if (mounted) setState(() {});
+      return;
+    }
+    _goodManuallyAdjusted = false;
+    _syncGoodFromBom();
+    if (mounted) setState(() {});
+  }
+
+  void _onRepairOrNgChanged() {
+    if (_goodManuallyAdjusted) {
+      _syncProcessingFromOutcomes();
+    } else {
+      _syncGoodFromBom();
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _syncGoodFromBom() {
+    if (!_isBomConversion || _outputBom == null || _goodManuallyAdjusted) {
+      return;
+    }
+    final good = _calculatedGood;
+    _updatingDerivedGood = true;
+    _good.value = TextEditingValue(
+      text: _number(good),
+      selection: TextSelection.collapsed(offset: _number(good).length),
+    );
+    _updatingDerivedGood = false;
+  }
+
+  void _syncProcessingFromOutcomes() {
+    if (!_isBomConversion || _outputBom == null) return;
+    final items = (_outputBom!['items'] as List).cast<Map<String, dynamic>>();
+    for (final item in items) {
+      if (item['material_product_code']?.toString() != widget.job.productCode) {
+        continue;
+      }
+      final inputPerBatch = double.tryParse(item['quantity'].toString()) ?? 0;
+      final outputPerBatch =
+          double.tryParse(_outputBom!['output_quantity'].toString()) ?? 0;
+      if (inputPerBatch <= 0 || outputPerBatch <= 0) return;
+      final outputTotal = _value(_good) + _value(_repair) + _value(_ng);
+      final requiredInput = outputTotal * inputPerBatch / outputPerBatch;
+      final processing = isDiscreteUnit(widget.job.unit)
+          ? requiredInput.ceilToDouble()
+          : double.parse(requiredInput.toStringAsFixed(3));
+      _updatingDerivedProcessing = true;
+      final text = _number(processing);
+      _processing.value = TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      );
+      _updatingDerivedProcessing = false;
+      return;
+    }
+  }
+
   Map<String, dynamic>? get _outputProductRecord {
     for (final product in _products) {
       if (product['code']?.toString() == _outputProduct) return product;
@@ -170,6 +234,43 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
     return (convertedQuantity - _value(_repair) - _value(_ng))
         .clamp(0, double.infinity)
         .toDouble();
+  }
+
+  double get _bomConsumableInputEquivalent {
+    if (!_isBomConversion || _outputBom == null) return 0;
+    final items = (_outputBom!['items'] as List).cast<Map<String, dynamic>>();
+    final material = items.where(
+      (item) =>
+          item['material_product_code']?.toString() == widget.job.productCode,
+    );
+    if (material.isEmpty) return 0;
+    final inputPerBatch =
+        double.tryParse(material.first['quantity'].toString()) ?? 0;
+    final outputPerBatch =
+        double.tryParse(_outputBom!['output_quantity'].toString()) ?? 0;
+    if (inputPerBatch <= 0 || outputPerBatch <= 0) return 0;
+    final varianceOutput =
+        (_value(_processing) / inputPerBatch * outputPerBatch) -
+        _value(_good) -
+        _value(_repair) -
+        _value(_ng);
+    if (varianceOutput <= 0) return 0;
+    return varianceOutput * inputPerBatch / outputPerBatch;
+  }
+
+  double get _bomExpectedOutput {
+    if (!_isBomConversion || _outputBom == null) return 0;
+    final items = (_outputBom!['items'] as List).cast<Map<String, dynamic>>();
+    for (final item in items) {
+      if (item['material_product_code']?.toString() == widget.job.productCode) {
+        final inputPerBatch = double.tryParse(item['quantity'].toString()) ?? 0;
+        final outputPerBatch =
+            double.tryParse(_outputBom!['output_quantity'].toString()) ?? 0;
+        if (inputPerBatch <= 0) return 0;
+        return _value(_processing) / inputPerBatch * outputPerBatch;
+      }
+    }
+    return 0;
   }
 
   String get _effectiveOutputUnit => _isBomConversion
@@ -211,6 +312,7 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
       _outputProduct = value;
       _outputBom = null;
       _outputUnit = value == widget.job.productCode ? widget.job.unit : null;
+      _goodManuallyAdjusted = false;
       _repairRoute = null;
     });
     try {
@@ -233,6 +335,7 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
           }
           _repairRoutes = (responses.last as List).cast<Map<String, dynamic>>();
         });
+        _syncGoodFromBom();
       }
     } on ApiException catch (exception) {
       if (mounted) setState(() => _error = exception.message);
@@ -245,13 +348,20 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
   Future<void> _save() async {
     if (!_key.currentState!.validate()) return;
     final processing = _value(_processing);
-    final good = _isBomConversion ? _calculatedGood : _value(_good);
+    final good = _value(_good);
     final repair = _value(_repair);
     final ng = _value(_ng);
     if (_isBomConversion && _outputBom == null) {
       setState(
         () => _error =
             'Selected output product needs a valid single-material BOM.',
+      );
+      return;
+    }
+    if (_isBomConversion && good + repair + ng > _bomExpectedOutput + 0.0001) {
+      setState(
+        () => _error =
+            'Good, Repair, and NG cannot exceed the BOM converted quantity.',
       );
       return;
     }
@@ -519,16 +629,11 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
                       spacing: 12,
                       runSpacing: 12,
                       children: [
-                        _isBomConversion
-                            ? _readOnlyQuantity(
-                                'Good Quantity',
-                                _number(_calculatedGood),
-                              )
-                            : _quantityField(
-                                _good,
-                                'Good Quantity',
-                                widget.job.unit,
-                              ),
+                        _quantityField(
+                          _good,
+                          'Good Quantity',
+                          _effectiveOutputUnit,
+                        ),
                         _quantityField(
                           _repair,
                           'Repair Quantity',
@@ -542,6 +647,13 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
                         ),
                       ],
                     ),
+                    if (_isBomConversion) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'BOM consumable variance: ${formatQuantity(_bomConsumableInputEquivalent, widget.job.unit)} ${unitLabel(widget.job.unit)} input equivalent',
+                        style: const TextStyle(color: Color(0xFF667085)),
+                      ),
+                    ],
                     const SizedBox(height: 14),
                     SearchableSelectField<String?>(
                       value: _nextProcess,
@@ -769,14 +881,6 @@ class _WipExecutionFormDialogState extends State<WipExecutionFormDialog> {
       ),
       validator: (value) =>
           quantityValidationError(value, unit, allowZero: true),
-    ),
-  );
-
-  Widget _readOnlyQuantity(String label, String value) => SizedBox(
-    width: 220,
-    child: InputDecorator(
-      decoration: InputDecoration(labelText: label),
-      child: Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
     ),
   );
 

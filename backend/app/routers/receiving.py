@@ -28,6 +28,7 @@ from app.models import (
     ProductSupplySource,
     PurchaseOrder,
     PurchaseOrderItem,
+    PurchaseOrderKind,
     PurchaseOrderStatus,
     Receiving,
     ReceivingSourceType,
@@ -38,6 +39,8 @@ from app.models import (
     SalesOrderMaterialAllocation,
     SalesOrderStatus,
     StorageLocation,
+    SubcontractDispatch,
+    SubcontractDispatchStatus,
     Transportation,
     User,
 )
@@ -117,6 +120,7 @@ async def receiving_response(db: AsyncSession, record: Receiving, access: Depart
         source_type=record.source_type,
         source_code=record.source_code,
         source_document_item_id=record.purchase_order_item_id or record.sales_order_item_id,
+        subcontract_dispatch_id=record.subcontract_dispatch_id,
         document_number=record.document_number,
         po_number=record.po_number,
         vehicle_number=record.vehicle_number,
@@ -194,7 +198,7 @@ async def list_receivings(
 async def list_receiving_source_items(
     source_type: ReceivingSourceType | None = None,
     source_code: str | None = None,
-    document_type: str | None = Query(default=None, pattern="^(purchase_order|sales_order)$"),
+    document_type: str | None = Query(default=None, pattern="^(purchase_order|sales_order|subcontract_return)$"),
     customer_code: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -202,7 +206,9 @@ async def list_receiving_source_items(
     await current_access(db, current_user)
     if document_type:
         expected_type = (
-            ReceivingSourceType.supplier if document_type == "sales_order" else ReceivingSourceType.customer
+            ReceivingSourceType.supplier
+            if document_type in {"sales_order", "subcontract_return"}
+            else ReceivingSourceType.customer
         )
         if source_type and source_type != expected_type:
             raise HTTPException(
@@ -214,17 +220,19 @@ async def list_receiving_source_items(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Supplier is required")
     corporation = await db.get(Corporation, source_code)
     incorrect_role = (
-        document_type == "purchase_order" and corporation is not None and not corporation.is_supplier
-    ) or (
-        document_type != "purchase_order"
-        and corporation is not None
-        and source_type == ReceivingSourceType.supplier
-        and not corporation.is_supplier
-    ) or (
-        document_type != "purchase_order"
-        and corporation is not None
-        and source_type == ReceivingSourceType.customer
-        and not corporation.is_customer
+        (document_type == "purchase_order" and corporation is not None and not corporation.is_supplier)
+        or (
+            document_type != "purchase_order"
+            and corporation is not None
+            and source_type == ReceivingSourceType.supplier
+            and not corporation.is_supplier
+        )
+        or (
+            document_type != "purchase_order"
+            and corporation is not None
+            and source_type == ReceivingSourceType.customer
+            and not corporation.is_customer
+        )
     )
     if not corporation or incorrect_role:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Corporation not found")
@@ -232,7 +240,46 @@ async def list_receiving_source_items(
     # A supplier receipt supplies a customer-provided SO input (a BOM material
     # or the SO product itself for a multi-stage process), while a customer
     # receipt is reconciled against supplier demand (PO).
-    if source_type == ReceivingSourceType.supplier:
+    if document_type == "subcontract_return":
+        rows = await db.execute(
+            select(PurchaseOrderItem, PurchaseOrder, Product, SubcontractDispatch)
+            .join(PurchaseOrder, PurchaseOrder.po_number == PurchaseOrderItem.purchase_order_number)
+            .join(Product, Product.code == PurchaseOrderItem.product_code)
+            .join(SubcontractDispatch, SubcontractDispatch.purchase_order_item_id == PurchaseOrderItem.id)
+            .where(
+                PurchaseOrder.status == PurchaseOrderStatus.approved,
+                PurchaseOrder.order_kind == PurchaseOrderKind.subcontract,
+                PurchaseOrder.supplier_code == source_code,
+                SubcontractDispatch.subcontractor_code == source_code,
+                SubcontractDispatch.status.in_(
+                    [
+                        SubcontractDispatchStatus.dispatched,
+                        SubcontractDispatchStatus.partially_received,
+                    ]
+                ),
+                SubcontractDispatch.expected_output_quantity > SubcontractDispatch.returned_quantity,
+            )
+        )
+        for item, order, product, dispatch in rows.all():
+            responses.append(
+                ReceivingSourceItemResponse(
+                    source_type=source_type,
+                    source_code=source_code,
+                    source_name=corporation.name,
+                    document_number=order.po_number,
+                    item_id=item.id,
+                    subcontract_dispatch_id=dispatch.id,
+                    product_code=product.code,
+                    product_description=product.description,
+                    ordered_quantity=dispatch.expected_output_quantity,
+                    received_quantity=dispatch.returned_quantity,
+                    outstanding_quantity=max(
+                        dispatch.expected_output_quantity - dispatch.returned_quantity, Decimal("0")
+                    ),
+                    unit=item.unit,
+                )
+            )
+    elif source_type == ReceivingSourceType.supplier:
         rows = await db.execute(
             select(SalesOrderMaterialAllocation, SalesOrderItem, SalesOrder, Product)
             .join(SalesOrderItem, SalesOrderItem.id == SalesOrderMaterialAllocation.sales_order_item_id)
@@ -287,6 +334,7 @@ async def list_receiving_source_items(
             .join(Product, Product.code == PurchaseOrderItem.product_code)
             .where(
                 PurchaseOrder.status == PurchaseOrderStatus.approved,
+                PurchaseOrder.order_kind == PurchaseOrderKind.purchase,
                 PurchaseOrderItem.quantity_grams > PurchaseOrderItem.received_quantity,
                 po_source_filter,
                 Product.supplier_code == PurchaseOrder.supplier_code,
@@ -320,8 +368,14 @@ async def create_receiving(
 ) -> ReceivingResponse:
     access = await current_access(db, current_user)
     expected_type = (
-        ReceivingSourceType.supplier if data.document_type == "sales_order" else ReceivingSourceType.customer
-    ) if data.document_type else data.source_type
+        (
+            ReceivingSourceType.supplier
+            if data.document_type in {"sales_order", "subcontract_return"}
+            else ReceivingSourceType.customer
+        )
+        if data.document_type
+        else data.source_type
+    )
     if data.source_type != expected_type:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -329,22 +383,21 @@ async def create_receiving(
         )
     corporation = await db.get(Corporation, data.source_code)
     incorrect_role = (
-        data.document_type == "purchase_order" and corporation and not corporation.is_supplier
-    ) or (
-        data.document_type != "purchase_order"
-        and data.source_type == ReceivingSourceType.supplier
-        and corporation
-        and not corporation.is_supplier
-    ) or (
-        data.document_type != "purchase_order"
-        and data.source_type == ReceivingSourceType.customer
-        and corporation
-        and not corporation.is_customer
+        (data.document_type in {"purchase_order", "subcontract_return"} and corporation and not corporation.is_supplier)
+        or (
+            data.document_type != "purchase_order"
+            and data.source_type == ReceivingSourceType.supplier
+            and corporation
+            and not corporation.is_supplier
+        )
+        or (
+            data.document_type != "purchase_order"
+            and data.source_type == ReceivingSourceType.customer
+            and corporation
+            and not corporation.is_customer
+        )
     )
-    if (
-        not corporation
-        or incorrect_role
-    ):
+    if not corporation or incorrect_role:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Selected corporation does not match Receiving source type",
@@ -354,7 +407,41 @@ async def create_receiving(
     sales_item: SalesOrderItem | None = None
     material_allocation: SalesOrderMaterialAllocation | None = None
     document_number: str
-    if data.source_type == ReceivingSourceType.supplier:
+    subcontract_dispatch: SubcontractDispatch | None = None
+    if data.document_type == "subcontract_return":
+        row = (
+            await db.execute(
+                select(PurchaseOrderItem, PurchaseOrder, Product, SubcontractDispatch)
+                .join(PurchaseOrder, PurchaseOrder.po_number == PurchaseOrderItem.purchase_order_number)
+                .join(Product, Product.code == PurchaseOrderItem.product_code)
+                .join(SubcontractDispatch, SubcontractDispatch.purchase_order_item_id == PurchaseOrderItem.id)
+                .where(
+                    PurchaseOrderItem.id == data.source_document_item_id,
+                    SubcontractDispatch.id == data.subcontract_dispatch_id,
+                )
+                .with_for_update()
+            )
+        ).one_or_none()
+        if not row:
+            raise HTTPException(status_code=422, detail="Subcontract dispatch not found")
+        purchase_item, purchase_order, document_product, subcontract_dispatch = row
+        if (
+            purchase_order.status != PurchaseOrderStatus.approved
+            or purchase_order.order_kind != PurchaseOrderKind.subcontract
+            or purchase_order.supplier_code != corporation.code
+            or subcontract_dispatch.subcontractor_code != corporation.code
+            or subcontract_dispatch.status
+            not in {
+                SubcontractDispatchStatus.dispatched,
+                SubcontractDispatchStatus.partially_received,
+            }
+        ):
+            raise HTTPException(status_code=422, detail="Subcontract return is not available for this supplier")
+        outstanding = subcontract_dispatch.expected_output_quantity - subcontract_dispatch.returned_quantity
+        document_number = purchase_order.po_number
+        product_code = purchase_item.product_code
+        unit = purchase_item.unit
+    elif data.source_type == ReceivingSourceType.supplier:
         row = (
             await db.execute(
                 select(SalesOrderMaterialAllocation, SalesOrderItem, SalesOrder, Product)
@@ -398,6 +485,7 @@ async def create_receiving(
         purchase_item, purchase_order, document_product = row
         if (
             purchase_order.status != PurchaseOrderStatus.approved
+            or purchase_order.order_kind != PurchaseOrderKind.purchase
             or (data.document_type == "purchase_order" and purchase_order.supplier_code != corporation.code)
             or (data.document_type != "purchase_order" and document_product.customer_code != corporation.code)
             or document_product.supplier_code != purchase_order.supplier_code
@@ -412,10 +500,9 @@ async def create_receiving(
         unit = purchase_item.unit
 
     document_quantity = grams(data.quantity_grams)
-    # The lookup filters completed source lines, but an item can become fully
-    # received after the form was opened by another user. Keep this guard
-    # inside the locked transaction. Receipt quantities above a *positive*
-    # outstanding balance remain allowed by the existing business rule.
+    # Keep this guard inside the locked transaction in case the line was fully
+    # received after the form was opened. A subcontract return may exceed its
+    # expected quantity; the actual quantity is still recorded into stock.
     if outstanding <= 0:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -478,6 +565,13 @@ async def create_receiving(
 
     if purchase_item:
         purchase_item.received_quantity += document_quantity
+        if subcontract_dispatch:
+            subcontract_dispatch.returned_quantity += document_quantity
+            subcontract_dispatch.status = (
+                SubcontractDispatchStatus.received
+                if subcontract_dispatch.returned_quantity >= subcontract_dispatch.expected_output_quantity
+                else SubcontractDispatchStatus.partially_received
+            )
         await db.flush()
         open_items = await db.scalar(
             select(func.count())
@@ -512,6 +606,7 @@ async def create_receiving(
         purchase_order_item_id=purchase_item.id if purchase_item else None,
         sales_order_item_id=sales_item.id if sales_item else None,
         material_allocation_id=material_allocation.id if material_allocation else None,
+        subcontract_dispatch_id=subcontract_dispatch.id if subcontract_dispatch else None,
         document_number=data.document_number,
         po_number=document_number,
         transport_source=data.transport_source.value,
@@ -654,10 +749,39 @@ async def reverse_receiving(
                 select(PurchaseOrderItem).where(PurchaseOrderItem.id == record.purchase_order_item_id).with_for_update()
             )
         ).scalar_one()
-        purchase_item.received_quantity -= from_inventory_quantity(record.quantity_grams, record.unit)
+        received_quantity = from_inventory_quantity(record.quantity_grams, record.unit)
+        if purchase_item.received_quantity < received_quantity:
+            raise HTTPException(status_code=409, detail="Purchase Order received quantity is inconsistent")
+        purchase_item.received_quantity -= received_quantity
         purchase_order = await db.get(PurchaseOrder, purchase_item.purchase_order_number)
         if purchase_order:
-            purchase_order.fulfillment_status = FulfillmentStatus.open
+            open_items = await db.scalar(
+                select(func.count())
+                .select_from(PurchaseOrderItem)
+                .where(
+                    PurchaseOrderItem.purchase_order_number == purchase_order.po_number,
+                    PurchaseOrderItem.received_quantity < PurchaseOrderItem.quantity_grams,
+                )
+            )
+            purchase_order.fulfillment_status = FulfillmentStatus.closed if open_items == 0 else FulfillmentStatus.open
+        if record.subcontract_dispatch_id:
+            dispatch = (
+                await db.execute(
+                    select(SubcontractDispatch)
+                    .where(SubcontractDispatch.id == record.subcontract_dispatch_id)
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if not dispatch or dispatch.returned_quantity < received_quantity:
+                raise HTTPException(status_code=409, detail="Subcontract dispatch return quantity is inconsistent")
+            dispatch.returned_quantity -= received_quantity
+            dispatch.status = (
+                SubcontractDispatchStatus.received
+                if dispatch.returned_quantity >= dispatch.expected_output_quantity
+                else SubcontractDispatchStatus.partially_received
+                if dispatch.returned_quantity > 0
+                else SubcontractDispatchStatus.dispatched
+            )
     if record.material_allocation_id:
         allocation = (
             await db.execute(

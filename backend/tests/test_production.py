@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from app.middleware import is_production_path
 from app.models import WipLotStatus, WipProcessType
 from app.production_services import (
+    bom_consumable_input_equivalent,
     child_segment_code,
     effective_target_cycle_time,
     ensure_production_execution_reversible,
@@ -47,6 +48,34 @@ def test_production_execution_rejects_overdraw_and_unbalanced_outcomes() -> None
         validate_execution_quantities(Decimal("10"), Decimal("10.001"), Decimal("10.001"), Decimal("0"), Decimal("0"))
     with pytest.raises(ValueError, match="must equal"):
         validate_execution_quantities(Decimal("10"), Decimal("10"), Decimal("5"), Decimal("3"), Decimal("1"))
+
+
+def test_bom_conversion_records_source_equivalent_consumable_variance() -> None:
+    assert bom_consumable_input_equivalent(
+        Decimal("1"),
+        Decimal("1"),
+        Decimal("10"),
+        Decimal("9"),
+        Decimal("0"),
+        Decimal("0"),
+    ) == Decimal("0.100")
+    assert bom_consumable_input_equivalent(
+        Decimal("1"),
+        Decimal("1"),
+        Decimal("10"),
+        Decimal("8"),
+        Decimal("1"),
+        Decimal("1"),
+    ) == Decimal("0.000")
+    with pytest.raises(ValueError, match="cannot exceed"):
+        bom_consumable_input_equivalent(
+            Decimal("1"),
+            Decimal("1"),
+            Decimal("10"),
+            Decimal("11"),
+            Decimal("0"),
+            Decimal("0"),
+        )
 
 
 def test_production_number_and_child_segment_are_traceable() -> None:

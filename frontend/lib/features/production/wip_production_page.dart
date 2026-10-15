@@ -847,8 +847,22 @@ class _WipProductionPageState extends State<WipProductionPage> {
                         DataCell(Text(item.afterProcess)),
                         DataCell(Text(item.machineName)),
                         DataCell(
-                          Text(
-                            '${formatQuantity(item.goodQuantity, item.outputUnit)} / ${formatQuantity(item.repairQuantity, item.outputUnit)} / ${formatQuantity(item.ngQuantity, item.outputUnit)}',
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                '${formatQuantity(item.goodQuantity, item.outputUnit)} / ${formatQuantity(item.repairQuantity, item.outputUnit)} / ${formatQuantity(item.ngQuantity, item.outputUnit)}',
+                              ),
+                              if (item.bomConsumableQuantity > 0)
+                                Text(
+                                  'Consumable ${formatQuantity(item.bomConsumableQuantity, item.unit)} ${unitLabel(item.unit)}',
+                                  style: const TextStyle(
+                                    color: Color(0xFF667085),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                         DataCell(
@@ -892,7 +906,7 @@ class _WipProductionPageState extends State<WipProductionPage> {
           onTap: () => _executionDetail(item),
           title: Text(item.number),
           subtitle: Text(
-            '${item.description}\n${item.beforeProcess} → ${item.afterProcess}\nGood ${formatQuantity(item.goodQuantity, item.outputUnit)} • Repair ${formatQuantity(item.repairQuantity, item.outputUnit)} • NG ${formatQuantity(item.ngQuantity, item.outputUnit)}',
+            '${item.description}\n${item.beforeProcess} → ${item.afterProcess}\nGood ${formatQuantity(item.goodQuantity, item.outputUnit)} • Repair ${formatQuantity(item.repairQuantity, item.outputUnit)} • NG ${formatQuantity(item.ngQuantity, item.outputUnit)}${item.bomConsumableQuantity > 0 ? '\nBOM consumable ${formatQuantity(item.bomConsumableQuantity, item.unit)} ${unitLabel(item.unit)}' : ''}',
           ),
           isThreeLine: true,
           trailing: item.canReverse
@@ -941,6 +955,11 @@ class _WipProductionPageState extends State<WipProductionPage> {
                   'NG',
                   '${formatQuantity(item.ngQuantity, item.outputUnit)} ${unitLabel(item.outputUnit)}',
                 ),
+                if (item.bomConsumableQuantity > 0)
+                  _detail(
+                    'BOM Consumable / Variance',
+                    '${formatQuantity(item.bomConsumableQuantity, item.unit)} ${unitLabel(item.unit)} input equivalent',
+                  ),
                 _detail(
                   'Time Range',
                   item.startedAt == null || item.endedAt == null

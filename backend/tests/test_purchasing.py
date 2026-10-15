@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.document_services import purchase_order_pdf_bytes
-from app.middleware import is_purchasing_path
+from app.middleware import is_purchasing_path, is_warehouse_subcontract_path
 from app.models import AccessLevel, PurchaseOrderStatus
 from app.purchasing_permissions import (
     ensure_purchasing_head,
@@ -19,8 +19,9 @@ from app.purchasing_services import (
     ensure_waiting_review,
     format_purchase_order_number,
     payment_due_date,
+    sales_order_po_demand_rows,
 )
-from app.schemas import PurchaseOrderCreate
+from app.schemas import PurchaseOrderCreate, SubcontractDispatchCreate
 
 
 def user(user_id: str = "130826000", active: bool = True) -> SimpleNamespace:
@@ -67,6 +68,14 @@ def test_purchasing_middleware_path_match_is_segment_safe() -> None:
     assert not is_purchasing_path("/api/v1/master-data/products")
 
 
+def test_warehouse_subcontract_routes_are_narrowly_classified() -> None:
+    assert is_warehouse_subcontract_path("/api/v1/purchasing/subcontract-source-lots")
+    assert is_warehouse_subcontract_path("/api/v1/purchasing/subcontract-orders-for-dispatch")
+    assert is_warehouse_subcontract_path("/api/v1/purchasing/PO-161026-000/subcontract-dispatches")
+    assert not is_warehouse_subcontract_path("/api/v1/purchasing/PO-161026-000")
+    assert not is_warehouse_subcontract_path("/api/v1/purchasing/sales-orders-for-po")
+
+
 def test_only_department_pic_or_head_can_access_purchasing() -> None:
     pic_access = resolve_purchasing_access(user("PIC"), department("PIC", "HEAD"))
     head_access = resolve_purchasing_access(user("HEAD"), department("PIC", "HEAD"))
@@ -105,6 +114,34 @@ def test_purchase_order_number_and_payment_due_date() -> None:
     order_date = date(2026, 8, 13)
     assert format_purchase_order_number(order_date, 0) == "PO-130826-000"
     assert payment_due_date(order_date, 30) == date(2026, 9, 12)
+
+
+def test_po_demands_exclude_synthetic_self_allocation_but_keep_bom_materials() -> None:
+    rows = sales_order_po_demand_rows(
+        "B001",
+        Decimal("10"),
+        Decimal("0"),
+        "pcs",
+        [
+            SimpleNamespace(
+                material_product_code="B001",
+                required_quantity=Decimal("10"),
+                received_quantity=Decimal("0"),
+                unit="pcs",
+            ),
+            SimpleNamespace(
+                material_product_code="RAW1",
+                required_quantity=Decimal("20"),
+                received_quantity=Decimal("5"),
+                unit="pcs",
+            ),
+        ],
+    )
+
+    assert rows == [
+        ("B001", Decimal("10"), "pcs", True),
+        ("RAW1", Decimal("15"), "pcs", False),
+    ]
 
 
 def test_purchase_totals_use_decimal_rounding_and_subtract_pph23() -> None:
@@ -153,6 +190,38 @@ def test_purchase_order_item_accepts_supported_inventory_units() -> None:
         if unit in {"pcs", "bar", "pail"}:
             data["items"][0]["quantity_grams"] = Decimal("1250")
         assert PurchaseOrderCreate(**data).items[0].unit.value == unit
+
+
+def test_subcontract_purchase_order_requires_so_and_return_process() -> None:
+    data = valid_order_data()
+    data["order_kind"] = "subcontract"
+    data["sales_order_number"] = "SO-260926-001"
+    data["items"][0]["process_to_code"] = "OP2"
+    assert PurchaseOrderCreate(**data).order_kind.value == "subcontract"
+
+    without_so = dict(data)
+    without_so.pop("sales_order_number")
+    with pytest.raises(ValidationError, match="must reference a Sales Order"):
+        PurchaseOrderCreate(**without_so)
+
+    without_process = valid_order_data()
+    without_process.update(order_kind="subcontract", sales_order_number="SO-260926-001")
+    with pytest.raises(ValidationError, match="next process"):
+        PurchaseOrderCreate(**without_process)
+
+
+def test_subcontract_dispatch_requires_exactly_one_stock_or_wip_source() -> None:
+    payload = {
+        "purchase_order_item_id": 12,
+        "quantity": Decimal("5"),
+        "expected_output_quantity": Decimal("10"),
+        "process_to_code": "OP2",
+    }
+    with pytest.raises(ValidationError, match="exactly one"):
+        SubcontractDispatchCreate(**payload)
+    assert SubcontractDispatchCreate(**payload, source_lot_id=8).source_lot_id == 8
+    with pytest.raises(ValidationError, match="exactly one"):
+        SubcontractDispatchCreate(**payload, source_lot_id=8, source_wip_job_id=9)
 
 
 def test_purchase_order_pdf_contains_document_and_signatures() -> None:

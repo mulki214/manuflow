@@ -251,7 +251,7 @@ class _WarehouseTransferFormDialogState
                           ),
                           _summary(
                             'Available',
-                            '${_number(_lot!.quantity)} ${unitLabel(_lot!.unit)}',
+                            '${formatQuantity(_lot!.quantity, _lot!.unit)} ${unitLabel(_lot!.unit)}',
                           ),
                         ],
                       ),
@@ -422,15 +422,11 @@ class _WarehouseTransferFormDialogState
       '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
   String _displayDate(DateTime value) =>
       '${value.day.toString().padLeft(2, '0')}/${value.month.toString().padLeft(2, '0')}/${value.year}';
-  String _number(double value) => value == value.truncateToDouble()
-      ? value.toInt().toString()
-      : value.toString();
-
   String _lotLabel(WarehouseStockLot lot) => [
     lot.productCode,
     lot.productName,
     lot.description,
     'Lot ${lot.lotNumber}',
-    '${_number(lot.quantity)} ${unitLabel(lot.unit)}',
+    '${formatQuantity(lot.quantity, lot.unit)} ${unitLabel(lot.unit)}',
   ].where((value) => value.trim().isNotEmpty).toSet().join(' — ');
 }

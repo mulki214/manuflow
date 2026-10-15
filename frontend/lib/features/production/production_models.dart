@@ -123,6 +123,7 @@ class ProductionExecutionModel {
     required this.afterProcess,
     required this.machineName,
     required this.processingQuantity,
+    required this.bomConsumableQuantity,
     required this.goodQuantity,
     required this.repairQuantity,
     required this.ngQuantity,
@@ -160,6 +161,9 @@ class ProductionExecutionModel {
     afterProcess: json['after_process_name']?.toString() ?? 'Quality Queue',
     machineName: json['machine_name']?.toString() ?? '-',
     processingQuantity: productionNumber(json['processing_quantity']),
+    bomConsumableQuantity: productionNumber(
+      json['bom_consumable_quantity'] ?? 0,
+    ),
     goodQuantity: productionNumber(json['good_quantity']),
     repairQuantity: productionNumber(json['repair_quantity']),
     ngQuantity: productionNumber(json['ng_quantity']),
@@ -207,6 +211,7 @@ class ProductionExecutionModel {
   final String afterProcess;
   final String machineName;
   final double processingQuantity;
+  final double bomConsumableQuantity;
   final double goodQuantity;
   final double repairQuantity;
   final double ngQuantity;

@@ -165,6 +165,12 @@ def purchase_order_pdf_bytes(order: Any) -> bytes:
                     "Requested Delivery",
                     order.requested_delivery_date.strftime("%d/%m/%Y"),
                 ],
+                [
+                    "Sales Order",
+                    getattr(order, "sales_order_number", None) or "-",
+                    "PO Type",
+                    str(getattr(getattr(order, "order_kind", "purchase"), "value", getattr(order, "order_kind", "purchase"))).replace("_", " ").title(),
+                ],
                 ["Address", order.delivery_address, "Quotation", order.quotation_reference or "-"],
             ], [28 * mm, 55 * mm, 35 * mm, 60 * mm], cell, label_style=label, metadata=True),
         Spacer(1, 5 * mm),
@@ -302,8 +308,9 @@ def purchase_request_pdf_bytes(request: Any) -> bytes:
     decision_label = "Rejected By" if status_value == "rejected" else "Approved By"
     metadata = [
         ["Date", request.request_date.strftime("%d/%m/%Y"), "Status", status_label],
-        ["Requested By", request.created_by_name, "Department", request.department_code or "-"],
-        ["Receiving Plant", request.delivery_plant_code or "-", "Expected Arrival", request.requested_delivery_date.strftime("%d/%m/%Y") if request.requested_delivery_date else "-"],
+        ["Sales Order", getattr(request, "sales_order_number", None) or "-", "Requested By", request.created_by_name],
+        ["Department", request.department_code or "-", "Receiving Plant", request.delivery_plant_code or "-"],
+        ["Expected Arrival", request.requested_delivery_date.strftime("%d/%m/%Y") if request.requested_delivery_date else "-", "", ""],
         ["Notes", request.notes or "-", decision_label, request.reviewed_by_name or "Pending review"],
         ["Reviewed At", request.reviewed_at.strftime("%d/%m/%Y %H:%M") if request.reviewed_at else "-", "", ""],
     ]
