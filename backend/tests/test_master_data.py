@@ -104,6 +104,28 @@ def test_product_response_exposes_current_stock_in_grams() -> None:
     assert ProductResponse.model_fields["current_stock_grams"].is_required()
 
 
+def test_internal_product_response_allows_missing_supplier_name() -> None:
+    from datetime import datetime, timezone
+
+    response = ProductResponse(
+        code="INT001",
+        customer_code="ACME",
+        supplier_code=None,
+        supply_source="manufactured_internally",
+        part_name="Internal Assembly",
+        part_no="IA-001",
+        description="Internal Assembly IA-001",
+        gross_weight=1,
+        nett_weight=1,
+        customer_name="ACME",
+        supplier_name=None,
+        current_stock_grams=0,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
+    assert response.supplier_name is None
+
+
 def test_product_qr_parser_accepts_compact_and_structured_payloads() -> None:
     assert parse_product_qr("PJA") == ("PJA", None)
     assert parse_product_qr("MANUFLOW|PJA|LOT-01") == ("PJA", "LOT-01")
