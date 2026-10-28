@@ -257,7 +257,7 @@ class ProductUpdate(BaseModel):
 class ProductResponse(ProductBase, TimestampedResponse, WorkflowResponse):
     code: str
     customer_name: str
-    supplier_name: str
+    supplier_name: str | None = None
     current_stock_grams: Decimal
     stock_by_unit: dict[str, Decimal] = {}
 
