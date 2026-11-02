@@ -1,5 +1,6 @@
 from datetime import date, datetime, timezone
 from decimal import Decimal
+from types import SimpleNamespace
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -12,7 +13,12 @@ from sqlalchemy.orm import selectinload
 from app.config import settings
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.document_services import purchase_order_pdf_bytes, signed_document_payload, verify_document_payload
+from app.document_services import (
+    purchase_order_pdf_bytes,
+    signed_document_payload,
+    subcontract_dispatch_note_pdf_bytes,
+    verify_document_payload,
+)
 from app.inventory_services import apply_stock_delta
 from app.models import (
     Corporation,
@@ -732,6 +738,135 @@ async def list_subcontract_dispatches(
         .order_by(SubcontractDispatch.dispatched_at, SubcontractDispatch.id)
     )
     return [SubcontractDispatchResponse.model_validate(row) for row in rows.scalars().all()]
+
+
+async def subcontract_dispatch_document(db: AsyncSession, dispatch: SubcontractDispatch) -> SimpleNamespace:
+    item = await db.get(PurchaseOrderItem, dispatch.purchase_order_item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Subcontract Purchase Order item not found")
+    order = await db.get(PurchaseOrder, item.purchase_order_number)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Subcontract Purchase Order not found")
+    subcontractor = await db.get(Corporation, order.supplier_code)
+    plant = await db.get(Plant, order.delivery_plant_code)
+    source_product = await db.get(Product, dispatch.product_code)
+    source_process = await db.get(WipProcess, dispatch.source_process_code) if dispatch.source_process_code else None
+    target_process = await db.get(WipProcess, dispatch.process_to_code)
+    creator = await db.get(User, dispatch.dispatched_by)
+    creator_name = f"{creator.first_name} {creator.last_name}".strip() if creator else dispatch.dispatched_by
+    return SimpleNamespace(
+        dispatch_number=dispatch.dispatch_number,
+        dispatched_at=dispatch.dispatched_at,
+        status=dispatch.status,
+        po_number=order.po_number,
+        sales_order_number=order.sales_order_number,
+        subcontractor_code=order.supplier_code,
+        subcontractor_name=order.supplier_name,
+        subcontractor_address=order.supplier_address or (subcontractor.address if subcontractor else ""),
+        subcontractor_contact=order.supplier_contact_person
+        or (subcontractor.contact_person_name if subcontractor else ""),
+        subcontractor_phone=order.supplier_phone or (subcontractor.phone_number if subcontractor else ""),
+        plant_code=order.delivery_plant_code,
+        plant_name=order.delivery_plant_name,
+        plant_address=order.delivery_address or (plant.full_address if plant else ""),
+        source_product_code=dispatch.product_code,
+        source_product_name=source_product.part_name if source_product else dispatch.product_code,
+        source_product_description=source_product.description if source_product else "",
+        expected_product_code=item.product_code,
+        expected_product_name=item.part_name,
+        expected_product_description=item.description,
+        lot_number=dispatch.lot_number,
+        quantity=dispatch.quantity,
+        unit=dispatch.unit,
+        expected_output_quantity=dispatch.expected_output_quantity,
+        expected_output_unit=item.unit,
+        source_process_name=(f"{source_process.code} — {source_process.name}" if source_process else ""),
+        process_to_name=(
+            f"{target_process.code} — {target_process.name}" if target_process else dispatch.process_to_code
+        ),
+        notes=dispatch.notes,
+        dispatched_by=dispatch.dispatched_by,
+        dispatched_by_name=creator_name,
+        creator_qr_payload=signed_document_payload(
+            "subcontract_dispatch",
+            dispatch.dispatch_number,
+            "dispatched",
+            dispatch.dispatched_by,
+            creator_name,
+            dispatch.dispatched_at,
+        ),
+    )
+
+
+@router.get("/subcontract-dispatches")
+async def list_all_subcontract_dispatches(
+    page: int = Query(1, ge=1),
+    size: int = Query(100, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    await warehouse_access(db, current_user)
+    rows = list(
+        (
+            await db.execute(
+                select(SubcontractDispatch)
+                .order_by(SubcontractDispatch.dispatched_at.desc(), SubcontractDispatch.id.desc())
+                .offset((page - 1) * size)
+                .limit(size)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    total = await db.scalar(select(func.count()).select_from(SubcontractDispatch)) or 0
+    items = []
+    for dispatch in rows:
+        record = await subcontract_dispatch_document(db, dispatch)
+        items.append(
+            {
+                "dispatch_number": record.dispatch_number,
+                "dispatched_at": record.dispatched_at,
+                "status": getattr(record.status, "value", record.status),
+                "po_number": record.po_number,
+                "sales_order_number": record.sales_order_number,
+                "subcontractor_code": record.subcontractor_code,
+                "subcontractor_name": record.subcontractor_name,
+                "source_product_code": record.source_product_code,
+                "source_product_name": record.source_product_name,
+                "expected_product_code": record.expected_product_code,
+                "expected_product_name": record.expected_product_name,
+                "lot_number": record.lot_number,
+                "quantity": record.quantity,
+                "unit": record.unit,
+                "expected_output_quantity": record.expected_output_quantity,
+                "expected_output_unit": record.expected_output_unit,
+                "source_process_name": record.source_process_name,
+                "process_to_name": record.process_to_name,
+                "notes": record.notes,
+            }
+        )
+    return {"items": items, "total": total, "page": page, "size": size}
+
+
+@router.get("/subcontract-dispatches/{dispatch_number}/pdf")
+async def download_subcontract_dispatch_note(
+    dispatch_number: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    await warehouse_access(db, current_user)
+    dispatch = (
+        await db.execute(select(SubcontractDispatch).where(SubcontractDispatch.dispatch_number == dispatch_number))
+    ).scalar_one_or_none()
+    if dispatch is None:
+        raise HTTPException(status_code=404, detail="Subcontract Dispatch not found")
+    document = await subcontract_dispatch_document(db, dispatch)
+    content = subcontract_dispatch_note_pdf_bytes(document)
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="subcontract-delivery-note-{dispatch_number}.pdf"'},
+    )
 
 
 @router.get("/subcontract-source-lots")

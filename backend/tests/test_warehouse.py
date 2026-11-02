@@ -71,14 +71,32 @@ def test_transfer_schema_requires_exactly_one_destination() -> None:
         destination_type="finished_goods",
         destination_location_code="FG-A",
     )
+    quality = WarehouseMaterialTransferCreate(
+        **base,
+        destination_type="quality",
+    )
     assert wip.destination_process_code == "CUT"
     assert finished_goods.destination_location_code == "FG-A"
+    assert quality.destination_process_code is None
     with pytest.raises(ValidationError):
         WarehouseMaterialTransferCreate(**base, destination_type="wip", destination_location_code="FG-A")
+    with pytest.raises(ValidationError):
+        WarehouseMaterialTransferCreate(
+            **base,
+            destination_type="quality",
+            destination_process_code="QC1",
+        )
+    with pytest.raises(ValidationError):
+        WarehouseMaterialTransferCreate(
+            **base,
+            destination_type="quality",
+            destination_location_code="FG-A",
+        )
 
 
 def test_only_untouched_queued_wip_job_can_be_reversed() -> None:
     ensure_wip_job_reversible(WipLotStatus.queued, Decimal("10"), Decimal("10"))
+    ensure_wip_job_reversible(WipLotStatus.awaiting_qc, Decimal("10"), Decimal("10"))
     for job_status, current in ((WipLotStatus.in_process, Decimal("10")), (WipLotStatus.queued, Decimal("9"))):
         with pytest.raises(HTTPException) as error:
             ensure_wip_job_reversible(job_status, current, Decimal("10"))

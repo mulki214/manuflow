@@ -10,6 +10,7 @@ import '../features/purchasing/purchasing_page.dart';
 import '../features/purchase_request/purchase_request_page.dart';
 import '../features/quality/quality_page.dart';
 import '../features/quotation/quotation_page.dart';
+import '../features/invoice/invoice_page.dart';
 import '../features/qr_label/qr_label_page.dart';
 import '../features/receiving/receiving_page.dart';
 import '../features/reporting/reporting_page.dart';
@@ -40,6 +41,7 @@ void navigateToModule(
     AppModule.quotation when auth.canAccessSalesOrder => QuotationPage(
       auth: auth,
     ),
+    AppModule.invoice when auth.canAccessSalesOrder => InvoicePage(auth: auth),
     AppModule.qrLabel => QrLabelPage(auth: auth),
     AppModule.purchasing when auth.canAccessPurchasing => PurchasingPage(
       auth: auth,

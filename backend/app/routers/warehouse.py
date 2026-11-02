@@ -102,7 +102,12 @@ async def transfer_response(
     reverser = await db.get(User, record.reversed_by) if record.reversed_by else None
     target_untouched = True
     if job:
-        target_untouched = job.status == WipLotStatus.queued and quantity(job.current_quantity) == quantity(
+        expected_status = (
+            WipLotStatus.awaiting_qc
+            if record.destination_type == WarehouseDestinationType.quality
+            else WipLotStatus.queued
+        )
+        target_untouched = job.status == expected_status and quantity(job.current_quantity) == quantity(
             job.input_quantity
         )
     elif record.destination_lot_id and record.status == WarehouseTransferStatus.posted:
@@ -367,7 +372,7 @@ async def create_transfer(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Destination must be an active Production WIP Process in the same Plant",
             )
-    else:
+    elif data.destination_type == WarehouseDestinationType.finished_goods:
         target_location = await db.get(StorageLocation, data.destination_location_code)
         target_storage = await db.get(WarehouseStorage, target_location.storage_code) if target_location else None
         if (
@@ -432,7 +437,13 @@ async def create_transfer(
         source_location_name=source_location.name,
         destination_type=data.destination_type,
         destination_process_code=process.code if process else None,
-        destination_process_name=process.name if process else None,
+        destination_process_name=(
+            process.name
+            if process
+            else "Quality Queue"
+            if data.destination_type == WarehouseDestinationType.quality
+            else None
+        ),
         destination_storage_code=target_storage.code if target_storage else None,
         destination_storage_name=target_storage.name if target_storage else None,
         destination_location_code=target_location.code if target_location else None,
@@ -446,12 +457,12 @@ async def create_transfer(
     )
     db.add(record)
     await db.flush()
-    if process:
+    if process or data.destination_type == WarehouseDestinationType.quality:
         db.add(
             WipLotJob(
                 source_transfer_number=transfer_number,
                 sales_order_item_id=sales_order_item_id,
-                process_code=process.code,
+                process_code=process.code if process else None,
                 product_code=product.code,
                 lot_number=source_lot.lot_number,
                 lot_segment_code=f"{source_lot.lot_number}-{transfer_number}",
@@ -459,7 +470,11 @@ async def create_transfer(
                 unit=source_lot.unit,
                 input_quantity=moved,
                 current_quantity=moved,
-                status=WipLotStatus.queued,
+                status=(
+                    WipLotStatus.awaiting_qc
+                    if data.destination_type == WarehouseDestinationType.quality
+                    else WipLotStatus.queued
+                ),
             )
         )
     db.add(
@@ -534,7 +549,7 @@ async def reverse_transfer(
     source_lot = (
         await db.execute(select(ProductLot).where(ProductLot.id == record.source_lot_id).with_for_update())
     ).scalar_one()
-    if record.destination_type == WarehouseDestinationType.wip:
+    if record.destination_type in {WarehouseDestinationType.wip, WarehouseDestinationType.quality}:
         job = (
             await db.execute(
                 select(WipLotJob)

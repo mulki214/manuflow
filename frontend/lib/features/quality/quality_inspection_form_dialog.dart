@@ -82,8 +82,9 @@ class _QualityInspectionFormDialogState
                 ),
               )
               .toList();
-          _repairRoutes = (result['routes'] as List)
-              .cast<Map<String, dynamic>>();
+          _repairRoutes = widget.job.beforeProcess == 'Direct Receiving'
+              ? []
+              : (result['routes'] as List).cast<Map<String, dynamic>>();
         });
       }
     } on ApiException catch (e) {

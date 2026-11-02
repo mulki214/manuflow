@@ -8,6 +8,7 @@ from app.models import (
     FulfillmentStatus,
     Gender,
     InventoryMovementType,
+    InvoiceStatus,
     ProductCategory,
     ProductSupplySource,
     PurchaseOrderKind,
@@ -624,6 +625,115 @@ class QuotationResponse(BaseModel):
 
 class PaginatedQuotations(BaseModel):
     items: list[QuotationResponse]
+    total: int
+    page: int
+    size: int
+
+
+class InvoiceLineInput(BaseModel):
+    delivery_number: str = Field(min_length=1, max_length=22)
+    delivery_line_id: int | None = Field(default=None, gt=0)
+    sales_order_item_id: int = Field(gt=0)
+    quantity: Decimal = Field(gt=0, decimal_places=3)
+
+
+class InvoiceCreate(BaseModel):
+    invoice_date: date
+    sales_order_number: str = Field(min_length=1, max_length=20)
+    due_date: date | None = None
+    notes: str = Field(default="", max_length=5000)
+    payment_terms: str = Field(default="", max_length=5000)
+    discount_amount: Decimal = Field(default=Decimal("0"), ge=0, decimal_places=2)
+    tax_label: str = Field(default="PPN", min_length=1, max_length=50)
+    tax_rate: Decimal = Field(default=Decimal("0"), ge=0, le=100, decimal_places=3)
+    items: list[InvoiceLineInput] = Field(min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def validate_invoice(self) -> "InvoiceCreate":
+        if self.due_date and self.due_date < self.invoice_date:
+            raise ValueError("Due date cannot be before invoice date")
+        seen: set[tuple[str, str]] = set()
+        for item in self.items:
+            source_key = (
+                item.delivery_number,
+                f"line:{item.delivery_line_id}"
+                if item.delivery_line_id is not None
+                else f"so-item:{item.sales_order_item_id}",
+            )
+            if source_key in seen:
+                raise ValueError("A delivery line can only be included once per invoice")
+            seen.add(source_key)
+        self.notes = self.notes.strip()
+        self.payment_terms = self.payment_terms.strip()
+        self.tax_label = self.tax_label.strip()
+        return self
+
+
+class InvoiceVoidRequest(BaseModel):
+    reason: str = Field(min_length=3, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def strip_reason(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 3:
+            raise ValueError("Void reason must contain at least 3 characters")
+        return value
+
+
+class InvoiceItemResponse(BaseModel):
+    id: int
+    line_number: int
+    delivery_number: str
+    delivery_line_id: int | None
+    sales_order_number: str
+    sales_order_item_id: int
+    product_code: str
+    part_name: str
+    part_no: str
+    description: str
+    lot_number: str
+    quantity: Decimal
+    unit: str
+    unit_price: Decimal
+    amount: Decimal
+    remark: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InvoiceResponse(BaseModel):
+    invoice_number: str
+    invoice_date: date
+    due_date: date | None
+    sales_order_number: str
+    customer_code: str
+    customer_name: str
+    customer_address: str
+    customer_phone: str
+    customer_contact_person: str
+    notes: str
+    payment_terms: str
+    currency: str
+    subtotal: Decimal
+    discount_amount: Decimal
+    tax_label: str
+    tax_rate: Decimal
+    tax_amount: Decimal
+    grand_total: Decimal
+    status: InvoiceStatus
+    created_by: str
+    created_by_name: str
+    voided_by_name: str | None
+    voided_at: datetime | None
+    void_reason: str | None
+    items: list[InvoiceItemResponse]
+    created_at: datetime
+    updated_at: datetime
+
+
+class PaginatedInvoices(BaseModel):
+    items: list[InvoiceResponse]
     total: int
     page: int
     size: int
@@ -1639,7 +1749,10 @@ class WarehouseMaterialTransferCreate(BaseModel):
     def validate_destination(self) -> "WarehouseMaterialTransferCreate":
         if self.destination_type == WarehouseDestinationType.wip:
             if not self.destination_process_code or self.destination_location_code:
-                raise ValueError("WIP destination requires one Process and no Finished Goods Location")
+                raise ValueError("Production WIP destination requires one Process and no Finished Goods Location")
+        elif self.destination_type == WarehouseDestinationType.quality:
+            if self.destination_process_code or self.destination_location_code:
+                raise ValueError("Quality destination does not require a Process or Finished Goods Location")
         elif not self.destination_location_code or self.destination_process_code:
             raise ValueError("Finished Goods destination requires one Storage Location and no WIP Process")
         return self
