@@ -82,7 +82,9 @@ class WarehouseTransferModel {
       source:
           '${json['source_storage_name']} — ${json['source_location_name']}',
       destinationType: destinationType,
-      destination: destinationType == 'wip'
+      destination: destinationType == 'quality'
+          ? json['destination_process_name']?.toString() ?? 'Quality Queue'
+          : destinationType == 'wip'
           ? '${json['destination_process_code']} — ${json['destination_process_name']}'
           : '${json['destination_storage_name']} — ${json['destination_location_name']}',
       documentNumber: json['document_number']?.toString(),

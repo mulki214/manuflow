@@ -6,6 +6,7 @@ from app.middleware import PurchasingDepartmentMiddleware
 from app.routers import (
     analytics,
     auth,
+    invoices,
     logistics,
     master_data,
     module_access,
@@ -41,6 +42,7 @@ app.include_router(module_access.router, prefix=settings.api_prefix)
 app.include_router(purchasing.router, prefix=settings.api_prefix)
 app.include_router(purchase_requests.router, prefix=settings.api_prefix)
 app.include_router(quotations.router, prefix=settings.api_prefix)
+app.include_router(invoices.router, prefix=settings.api_prefix)
 app.include_router(settings_router.router, prefix=settings.api_prefix)
 app.include_router(sales_orders.router, prefix=settings.api_prefix)
 app.include_router(receiving.router, prefix=settings.api_prefix)

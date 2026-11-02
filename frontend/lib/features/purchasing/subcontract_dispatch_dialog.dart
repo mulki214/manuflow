@@ -80,7 +80,7 @@ class _SubcontractDispatchDialogState extends State<SubcontractDispatchDialog> {
       _error = null;
     });
     try {
-      await widget.api.postJson(
+      final dispatch = await widget.api.postJson(
         '/purchasing/${Uri.encodeComponent(widget.order.poNumber)}/subcontract-dispatches',
         {
           'purchase_order_item_id': selected.id,
@@ -98,7 +98,7 @@ class _SubcontractDispatchDialogState extends State<SubcontractDispatchDialog> {
           'notes': _notes.text.trim(),
         },
       );
-      if (mounted) Navigator.pop(context, true);
+      if (mounted) Navigator.pop(context, dispatch);
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.message);
     } finally {

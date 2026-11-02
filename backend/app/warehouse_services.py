@@ -56,7 +56,7 @@ def ensure_transfer_posted(current_status: WarehouseTransferStatus) -> None:
 
 
 def ensure_wip_job_reversible(job_status: WipLotStatus, current: Decimal, original: Decimal) -> None:
-    if job_status != WipLotStatus.queued or quantity(current) != quantity(original):
+    if job_status not in {WipLotStatus.queued, WipLotStatus.awaiting_qc} or quantity(current) != quantity(original):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Transfer cannot be reversed because its WIP quantity has already been processed",

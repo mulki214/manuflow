@@ -20,6 +20,9 @@ from app.models import (
     FinishGoodReceipt,
     FinishGoodStatus,
     FulfillmentStatus,
+    Invoice,
+    InvoiceItem,
+    InvoiceStatus,
     Plant,
     Product,
     ProductLot,
@@ -128,9 +131,7 @@ def delivery_response(r: Delivery, lines: list[DeliveryLine] | None = None) -> D
 async def delivery_lines(db: AsyncSession, record: Delivery) -> list[DeliveryLine]:
     """Return detail rows, with a one-line fallback for documents posted before batch support."""
     result = await db.execute(
-        select(DeliveryLine)
-        .where(DeliveryLine.delivery_number == record.delivery_number)
-        .order_by(DeliveryLine.id)
+        select(DeliveryLine).where(DeliveryLine.delivery_number == record.delivery_number).order_by(DeliveryLine.id)
     )
     return list(result.scalars().all())
 
@@ -152,8 +153,7 @@ async def finish_queue(
                 )
                 .order_by(WipLotJob.created_at, WipLotJob.id)
             )
-        )
-        .all()
+        ).all()
     )
     return [
         {
@@ -249,9 +249,7 @@ async def post_finish_good(
         )
     prior_receipt = (
         await db.execute(
-            select(FinishGoodReceipt)
-            .where(FinishGoodReceipt.source_wip_job_id == job.id)
-            .with_for_update()
+            select(FinishGoodReceipt).where(FinishGoodReceipt.source_wip_job_id == job.id).with_for_update()
         )
     ).scalar_one_or_none()
     if prior_receipt and prior_receipt.status == FinishGoodStatus.posted:
@@ -513,7 +511,9 @@ async def create_delivery_batch_record(
         for item in items
     )
     if has_excess and not data.excess_reason:
-        raise HTTPException(status_code=422, detail="Excess Delivery Reason is required when Delivery exceeds the Sales Order")
+        raise HTTPException(
+            status_code=422, detail="Excess Delivery Reason is required when Delivery exceeds the Sales Order"
+        )
     if any(inventory_by_lot[lot.id] > lot.current_quantity_grams for lot in lots):
         raise HTTPException(status_code=422, detail="Delivery quantity exceeds Finish Good stock")
 
@@ -566,11 +566,7 @@ async def create_delivery_batch_record(
         vehicle_number=transportation.vehicle_number if transportation else None,
         transportation_code=transportation.code if transportation else None,
         driver_name=data.driver_name,
-        notes=(
-            f"{data.notes}\nExcess Delivery Reason: {data.excess_reason}".strip()
-            if has_excess
-            else data.notes
-        ),
+        notes=(f"{data.notes}\nExcess Delivery Reason: {data.excess_reason}".strip() if has_excess else data.notes),
         status=DeliveryStatus.dispatched,
         performed_by=current_user.id,
     )
@@ -803,9 +799,7 @@ async def download_delivery_note_pdf(
         ),
         driver_name=record.driver_name,
         status_label=(
-            "Delivered"
-            if record.status in {DeliveryStatus.delivered, DeliveryStatus.posted}
-            else "Dispatched"
+            "Delivered" if record.status in {DeliveryStatus.delivered, DeliveryStatus.posted} else "Dispatched"
         ),
         notes=record.notes,
         prepared_by_name=f"{creator.first_name} {creator.last_name}".strip() if creator else record.performed_by,
@@ -901,6 +895,20 @@ async def reverse_delivery(
         raise HTTPException(status_code=409, detail="Delivery has already been reversed")
     if current_user.role.strip().lower() != "courier" and current_user.access_level.value != "administrator":
         raise HTTPException(status_code=403, detail="Only Courier users can reverse Delivery")
+    issued_invoice_count = await db.scalar(
+        select(func.count())
+        .select_from(InvoiceItem)
+        .join(Invoice, Invoice.invoice_number == InvoiceItem.invoice_number)
+        .where(
+            InvoiceItem.delivery_number == record.delivery_number,
+            Invoice.status == InvoiceStatus.issued,
+        )
+    )
+    if issued_invoice_count:
+        raise HTTPException(
+            status_code=409,
+            detail="Void the linked invoice before reversing this delivery",
+        )
     lines = await delivery_lines(db, record)
     if not lines:
         lines = [

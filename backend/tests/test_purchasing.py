@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -6,7 +6,7 @@ import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from app.document_services import purchase_order_pdf_bytes
+from app.document_services import purchase_order_pdf_bytes, subcontract_dispatch_note_pdf_bytes
 from app.middleware import is_purchasing_path, is_warehouse_subcontract_path
 from app.models import AccessLevel, PurchaseOrderStatus
 from app.purchasing_permissions import (
@@ -71,6 +71,8 @@ def test_purchasing_middleware_path_match_is_segment_safe() -> None:
 def test_warehouse_subcontract_routes_are_narrowly_classified() -> None:
     assert is_warehouse_subcontract_path("/api/v1/purchasing/subcontract-source-lots")
     assert is_warehouse_subcontract_path("/api/v1/purchasing/subcontract-orders-for-dispatch")
+    assert is_warehouse_subcontract_path("/api/v1/purchasing/subcontract-dispatches")
+    assert is_warehouse_subcontract_path("/api/v1/purchasing/subcontract-dispatches/SCD-161026-ABC12345/pdf")
     assert is_warehouse_subcontract_path("/api/v1/purchasing/PO-161026-000/subcontract-dispatches")
     assert not is_warehouse_subcontract_path("/api/v1/purchasing/PO-161026-000")
     assert not is_warehouse_subcontract_path("/api/v1/purchasing/sales-orders-for-po")
@@ -258,5 +260,43 @@ def test_purchase_order_pdf_contains_document_and_signatures() -> None:
         ],
     )
     document = purchase_order_pdf_bytes(order)
+    assert document.startswith(b"%PDF")
+    assert len(document) > 1000
+
+
+def test_subcontract_dispatch_pdf_contains_delivery_note_and_qr_signature() -> None:
+    dispatch = SimpleNamespace(
+        dispatch_number="SCD-161026-ABC12345",
+        dispatched_at=datetime(2026, 10, 16, 9, 30),
+        status="dispatched",
+        po_number="PO-161026-000",
+        sales_order_number="SO-161026-000",
+        subcontractor_code="SUB-1",
+        subcontractor_name="Subcontractor Ltd",
+        subcontractor_address="A long subcontractor address that must wrap inside the PDF table",
+        subcontractor_contact="Contact Person",
+        subcontractor_phone="08123456789",
+        plant_code="PL001",
+        plant_name="Main Plant",
+        plant_address="Plant address",
+        source_product_code="RM-1",
+        source_product_name="Raw Material",
+        source_product_description="Source description",
+        expected_product_code="FG-1",
+        expected_product_name="Finished Product",
+        expected_product_description="Expected output description",
+        lot_number="LOT-1",
+        quantity=Decimal("10"),
+        unit="pcs",
+        expected_output_quantity=Decimal("9"),
+        expected_output_unit="pcs",
+        source_process_name="OP1 — Process 1",
+        process_to_name="OP2 — Process 2",
+        notes="Dispatch notes",
+        dispatched_by="130826001",
+        dispatched_by_name="Warehouse User",
+        creator_qr_payload="creator-signature",
+    )
+    document = subcontract_dispatch_note_pdf_bytes(dispatch)
     assert document.startswith(b"%PDF")
     assert len(document) > 1000

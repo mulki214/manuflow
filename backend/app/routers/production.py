@@ -263,7 +263,7 @@ async def process_response(db: AsyncSession, record: WipProcess) -> WipProcessRe
 
 
 async def job_response(db: AsyncSession, record: WipLotJob) -> ProductionWipJobResponse:
-    process = await db.get(WipProcess, record.process_code)
+    process = await db.get(WipProcess, record.process_code) if record.process_code else None
     product = await db.get(Product, record.product_code)
     plant = await db.get(Plant, record.plant_code)
     return ProductionWipJobResponse(
@@ -274,9 +274,9 @@ async def job_response(db: AsyncSession, record: WipLotJob) -> ProductionWipJobR
         repair_route_code=getattr(record, "repair_route_code", None),
         repair_step_order=getattr(record, "repair_step_order", None),
         repair_return_process_code=getattr(record, "repair_return_process_code", None),
-        process_code=record.process_code,
-        process_name=process.name if process else record.process_code,
-        process_type=process.process_type if process else WipProcessType.production,
+        process_code=record.process_code or "DIRECT",
+        process_name=process.name if process else "Direct Receiving",
+        process_type=process.process_type if process else WipProcessType.quality,
         product_code=record.product_code,
         product_name=product.part_name if product else record.product_code,
         description=product.description if product else "",
