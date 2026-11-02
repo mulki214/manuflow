@@ -1,3 +1,4 @@
+import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
@@ -33,6 +34,7 @@ class _WarehousePageState extends State<WarehousePage> {
   final _search = TextEditingController();
   List<WarehouseTransferModel> _transfers = [];
   List<PurchaseOrderModel> _subcontractOrders = [];
+  List<Map<String, dynamic>> _subcontractDispatches = [];
   bool _checking = true;
   bool _allowed = false;
   bool _loading = false;
@@ -46,6 +48,7 @@ class _WarehousePageState extends State<WarehousePage> {
   bool _subcontractLoading = false;
   String? _subcontractError;
   int _selectedTab = 0;
+  bool _showDispatchHistory = false;
   final int _size = 10;
 
   int get _pages => _total == 0 ? 1 : (_total / _size).ceil();
@@ -140,16 +143,76 @@ class _WarehousePageState extends State<WarehousePage> {
     }
   }
 
+  Future<void> _loadSubcontractDispatches() async {
+    setState(() {
+      _subcontractLoading = true;
+      _subcontractError = null;
+    });
+    try {
+      final dispatches = <Map<String, dynamic>>[];
+      var page = 1;
+      var total = 0;
+      do {
+        final response = await widget.auth.api.getJson(
+          '/purchasing/subcontract-dispatches?page=$page&size=100',
+        );
+        dispatches.addAll(
+          (response['items'] as List).cast<Map<String, dynamic>>(),
+        );
+        total = response['total'] as int;
+        page++;
+      } while (dispatches.length < total);
+      if (!mounted) return;
+      setState(() => _subcontractDispatches = dispatches);
+    } on ApiException catch (exception) {
+      if (mounted) setState(() => _subcontractError = exception.message);
+    } finally {
+      if (mounted) setState(() => _subcontractLoading = false);
+    }
+  }
+
+  Future<void> _downloadSubcontractDispatchNote(String dispatchNumber) async {
+    try {
+      final bytes = await widget.auth.api.getBytes(
+        '/purchasing/subcontract-dispatches/${Uri.encodeComponent(dispatchNumber)}/pdf',
+      );
+      await FileSaver.instance.saveFile(
+        name:
+            'subcontract-delivery-note-${dispatchNumber.replaceAll('/', '-')}',
+        bytes: bytes,
+        fileExtension: 'pdf',
+        mimeType: MimeType.pdf,
+      );
+    } on ApiException catch (exception) {
+      _message(exception.message);
+    }
+  }
+
   Future<void> _dispatchSubcontract(PurchaseOrderModel order) async {
-    final done = await showDialog<bool>(
+    final dispatch = await showDialog<Map<String, dynamic>>(
       context: context,
       barrierDismissible: false,
       builder: (_) =>
           SubcontractDispatchDialog(api: widget.auth.api, order: order),
     );
-    if (done == true) {
+    if (dispatch != null) {
       await _loadSubcontractOrders();
-      _message('Material/WIP dispatched to subcontractor.');
+      await _loadSubcontractDispatches();
+      if (!mounted) return;
+      final number = dispatch['dispatch_number']?.toString();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Material/WIP dispatched${number == null ? '.' : ': $number'}',
+          ),
+          action: number == null
+              ? null
+              : SnackBarAction(
+                  label: 'Print Note',
+                  onPressed: () => _downloadSubcontractDispatchNote(number),
+                ),
+        ),
+      );
     }
   }
 
@@ -363,6 +426,8 @@ class _WarehousePageState extends State<WarehousePage> {
                     Text(
                       _selectedTab == 0
                           ? '$_total material transfers'
+                          : _showDispatchHistory
+                          ? '${_subcontractDispatches.length} subcontract dispatch records'
                           : '${_subcontractOrders.length} subcontract POs ready to dispatch',
                       style: const TextStyle(color: Color(0xFF667085)),
                     ),
@@ -384,8 +449,10 @@ class _WarehousePageState extends State<WarehousePage> {
               ],
               if (desktop && _selectedTab == 1)
                 IconButton(
-                  tooltip: 'Refresh subcontract orders',
-                  onPressed: _loadSubcontractOrders,
+                  tooltip: 'Refresh subcontract dispatches',
+                  onPressed: _showDispatchHistory
+                      ? _loadSubcontractDispatches
+                      : _loadSubcontractOrders,
                   icon: const Icon(Icons.refresh),
                 ),
             ],
@@ -403,10 +470,30 @@ class _WarehousePageState extends State<WarehousePage> {
               if (selected == 0) {
                 _load();
               } else {
+                setState(() => _showDispatchHistory = false);
                 _loadSubcontractOrders();
               }
             },
           ),
+          if (_selectedTab == 1) ...[
+            const SizedBox(height: 10),
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(value: false, label: Text('Ready to Dispatch')),
+                ButtonSegment(value: true, label: Text('Dispatch History')),
+              ],
+              selected: {_showDispatchHistory},
+              onSelectionChanged: (selection) {
+                final showHistory = selection.first;
+                setState(() => _showDispatchHistory = showHistory);
+                if (showHistory) {
+                  _loadSubcontractDispatches();
+                } else {
+                  _loadSubcontractOrders();
+                }
+              },
+            ),
+          ],
           const SizedBox(height: 14),
           if (_selectedTab == 0)
             Card(
@@ -467,6 +554,10 @@ class _WarehousePageState extends State<WarehousePage> {
                         items: const [
                           DropdownMenuItem(value: null, child: Text('All')),
                           DropdownMenuItem(value: 'wip', child: Text('WIP')),
+                          DropdownMenuItem(
+                            value: 'quality',
+                            child: Text('Quality'),
+                          ),
                           DropdownMenuItem(
                             value: 'finished_goods',
                             child: Text('Finished Goods'),
@@ -544,11 +635,54 @@ class _WarehousePageState extends State<WarehousePage> {
             Text(_subcontractError!),
             const SizedBox(height: 8),
             OutlinedButton.icon(
-              onPressed: _loadSubcontractOrders,
+              onPressed: _showDispatchHistory
+                  ? _loadSubcontractDispatches
+                  : _loadSubcontractOrders,
               icon: const Icon(Icons.refresh),
               label: const Text('Retry'),
             ),
           ],
+        ),
+      );
+    }
+    if (_showDispatchHistory) {
+      if (_subcontractDispatches.isEmpty) {
+        return RefreshIndicator(
+          onRefresh: _loadSubcontractDispatches,
+          child: ListView(
+            children: const [
+              SizedBox(height: 180),
+              Center(child: Text('No subcontract dispatches found.')),
+            ],
+          ),
+        );
+      }
+      return RefreshIndicator(
+        onRefresh: _loadSubcontractDispatches,
+        child: ListView.separated(
+          padding: const EdgeInsets.only(bottom: 24),
+          itemCount: _subcontractDispatches.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 8),
+          itemBuilder: (context, index) {
+            final dispatch = _subcontractDispatches[index];
+            final number = dispatch['dispatch_number'].toString();
+            return Card(
+              child: ListTile(
+                title: Text('$number • ${dispatch['subcontractor_name']}'),
+                subtitle: Text(
+                  '${dispatch['po_number']} • SO ${dispatch['sales_order_number'] ?? '-'} • ${dispatch['dispatched_at']}\n'
+                  '${dispatch['source_product_name']} (${dispatch['source_product_code']}) • Lot ${dispatch['lot_number']} • ${dispatch['quantity']} ${dispatch['unit']}\n'
+                  '${dispatch['source_process_name']} → ${dispatch['process_to_name']} • Expected ${dispatch['expected_output_quantity']} ${dispatch['expected_output_unit']} • ${dispatch['status']}',
+                ),
+                isThreeLine: true,
+                trailing: IconButton(
+                  tooltip: 'Print Delivery Note PDF',
+                  onPressed: () => _downloadSubcontractDispatchNote(number),
+                  icon: const Icon(Icons.picture_as_pdf_outlined),
+                ),
+              ),
+            );
+          },
         ),
       );
     }

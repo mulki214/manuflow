@@ -21,10 +21,16 @@ def is_warehouse_subcontract_path(path: str) -> bool:
     if not path.startswith(prefix):
         return False
     endpoint = path.removeprefix(prefix)
-    return endpoint in {
-        "subcontract-source-lots",
-        "subcontract-orders-for-dispatch",
-    } or (endpoint.count("/") == 1 and endpoint.endswith("/subcontract-dispatches"))
+    return (
+        endpoint
+        in {
+            "subcontract-source-lots",
+            "subcontract-orders-for-dispatch",
+            "subcontract-dispatches",
+        }
+        or (endpoint.count("/") == 1 and endpoint.endswith("/subcontract-dispatches"))
+        or (endpoint.startswith("subcontract-dispatches/") and endpoint.endswith("/pdf"))
+    )
 
 
 def is_sales_order_path(path: str) -> bool:
@@ -34,6 +40,11 @@ def is_sales_order_path(path: str) -> bool:
 
 def is_quotation_path(path: str) -> bool:
     prefix = f"{settings.api_prefix}/quotations"
+    return path == prefix or path.startswith(f"{prefix}/")
+
+
+def is_invoice_path(path: str) -> bool:
+    prefix = f"{settings.api_prefix}/invoices"
     return path == prefix or path.startswith(f"{prefix}/")
 
 
@@ -74,7 +85,11 @@ class DepartmentModuleMiddleware(BaseHTTPMiddleware):
             protected_module = (settings.warehouse_department_code, "Warehouse", True)
         elif is_purchasing_path(request.url.path):
             protected_module = (settings.purchasing_department_code, "Purchasing", False)
-        elif is_sales_order_path(request.url.path) or is_quotation_path(request.url.path):
+        elif (
+            is_sales_order_path(request.url.path)
+            or is_quotation_path(request.url.path)
+            or is_invoice_path(request.url.path)
+        ):
             protected_module = (settings.sales_department_code, "Sales", False)
         elif (
             is_receiving_path(request.url.path)

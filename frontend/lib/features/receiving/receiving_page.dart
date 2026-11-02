@@ -708,6 +708,8 @@ class _ReceivingDrawer extends StatelessWidget {
               (module) => switch (module) {
                 AppModule.purchasing => auth.canAccessPurchasing,
                 AppModule.salesOrder => auth.canAccessSalesOrder,
+                AppModule.quotation => auth.canAccessSalesOrder,
+                AppModule.invoice => auth.canAccessSalesOrder,
                 AppModule.receiving => auth.canAccessReceiving,
                 AppModule.warehouse => auth.canAccessWarehouse,
                 AppModule.production => auth.canAccessProduction,

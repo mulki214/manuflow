@@ -296,6 +296,10 @@ class _WarehouseTransferFormDialogState
                           value: 'finished_goods',
                           child: Text('Finished Goods'),
                         ),
+                        DropdownMenuItem(
+                          value: 'quality',
+                          child: Text('Quality Queue'),
+                        ),
                       ],
                       onChanged: (value) => setState(() {
                         _destinationType = value ?? 'wip';
@@ -328,7 +332,7 @@ class _WarehouseTransferFormDialogState
                         validator: (value) =>
                             value == null ? 'WIP Process is required' : null,
                       )
-                    else
+                    else if (_destinationType == 'finished_goods')
                       SearchableSelectField<String>(
                         value: _locationCode,
                         labelText: 'Finished Goods Location *',

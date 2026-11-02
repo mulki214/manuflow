@@ -135,7 +135,7 @@ async def quality_repair_options(
 
 
 async def job_response(db: AsyncSession, record: WipLotJob) -> QualityWipJobResponse:
-    process = await db.get(WipProcess, record.process_code)
+    process = await db.get(WipProcess, record.process_code) if record.process_code else None
     product = await db.get(Product, record.product_code)
     plant = await db.get(Plant, record.plant_code)
     return QualityWipJobResponse(
@@ -143,9 +143,9 @@ async def job_response(db: AsyncSession, record: WipLotJob) -> QualityWipJobResp
         source_transfer_number=record.source_transfer_number,
         parent_job_id=record.parent_job_id,
         production_execution_id=record.production_execution_id,
-        process_code=record.process_code,
-        process_name=process.name if process else record.process_code,
-        process_type=process.process_type if process else WipProcessType.production,
+        process_code=record.process_code or "DIRECT",
+        process_name=process.name if process else "Direct Receiving",
+        process_type=process.process_type if process else WipProcessType.quality,
         product_code=record.product_code,
         product_name=product.part_name if product else record.product_code,
         description=product.description if product else "",
@@ -191,7 +191,7 @@ async def inspection_response(db: AsyncSession, record: QualityInspection) -> Qu
         plant_code=record.plant_code,
         plant_name=plant.name if plant else record.plant_code,
         unit=record.unit,
-        before_process_code=record.before_process_code,
+        before_process_code=record.before_process_code or "DIRECT",
         before_process_name=record.before_process_name,
         inspection_quantity=record.inspection_quantity,
         pass_quantity=record.pass_quantity,
@@ -325,9 +325,9 @@ async def inspect_wip_job(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="WIP Job is not available for Quality inspection"
         )
-    process = await db.get(WipProcess, job.process_code)
+    process = await db.get(WipProcess, job.process_code) if job.process_code else None
     product = await db.get(Product, job.product_code)
-    if not process or not product:
+    if not product:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="WIP Job reference is incomplete")
     try:
         for value, label in (
@@ -371,6 +371,7 @@ async def inspect_wip_job(
         if (
             not repair_route.is_active
             or repair_route.product_code != job.product_code
+            or not job.process_code
             or repair_route.source_process_code != job.process_code
             or not repair_step
         ):
@@ -413,7 +414,7 @@ async def inspect_wip_job(
         plant_code=job.plant_code,
         unit=job.unit,
         before_process_code=job.process_code,
-        before_process_name=process.name,
+        before_process_name=process.name if process else "Direct Receiving",
         inspection_quantity=inspected,
         pass_quantity=passed,
         repair_quantity=repair,
@@ -489,36 +490,48 @@ async def reverse_quality_inspection(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Quality inspection has already been reversed")
     job = (await db.execute(select(WipLotJob).where(WipLotJob.id == record.job_id).with_for_update())).scalar_one()
     children = list(
-        (
-            await db.execute(select(WipLotJob).where(WipLotJob.parent_job_id == job.id).with_for_update())
-        ).scalars()
+        (await db.execute(select(WipLotJob).where(WipLotJob.parent_job_id == job.id).with_for_update())).scalars()
     )
     child_ids = [child.id for child in children]
-    finish_receipt_child_ids = set(
-        (
-            await db.execute(
-                select(FinishGoodReceipt.source_wip_job_id).where(FinishGoodReceipt.source_wip_job_id.in_(child_ids))
-            )
-        )
-        .scalars()
-        .all()
-    ) if child_ids else set()
-    has_downstream_activity = False
-    if child_ids:
-        has_downstream_activity = bool(
-            await db.scalar(select(func.count()).select_from(WipLotJob).where(WipLotJob.parent_job_id.in_(child_ids)))
-        ) or bool(
-            await db.scalar(
-                select(func.count())
-                .select_from(FinishGoodReceipt)
-                .where(
-                    FinishGoodReceipt.source_wip_job_id.in_(child_ids),
-                    FinishGoodReceipt.status == FinishGoodStatus.posted,
+    finish_receipt_child_ids = (
+        set(
+            (
+                await db.execute(
+                    select(FinishGoodReceipt.source_wip_job_id).where(
+                        FinishGoodReceipt.source_wip_job_id.in_(child_ids)
+                    )
                 )
             )
-        ) or bool(
-            await db.scalar(
-                select(func.count()).select_from(ProductionExecution).where(ProductionExecution.job_id.in_(child_ids))
+            .scalars()
+            .all()
+        )
+        if child_ids
+        else set()
+    )
+    has_downstream_activity = False
+    if child_ids:
+        has_downstream_activity = (
+            bool(
+                await db.scalar(
+                    select(func.count()).select_from(WipLotJob).where(WipLotJob.parent_job_id.in_(child_ids))
+                )
+            )
+            or bool(
+                await db.scalar(
+                    select(func.count())
+                    .select_from(FinishGoodReceipt)
+                    .where(
+                        FinishGoodReceipt.source_wip_job_id.in_(child_ids),
+                        FinishGoodReceipt.status == FinishGoodStatus.posted,
+                    )
+                )
+            )
+            or bool(
+                await db.scalar(
+                    select(func.count())
+                    .select_from(ProductionExecution)
+                    .where(ProductionExecution.job_id.in_(child_ids))
+                )
             )
         )
     try:
