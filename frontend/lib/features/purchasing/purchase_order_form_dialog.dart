@@ -25,6 +25,7 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
   final _ppn = TextEditingController(text: '0');
   final _pph23 = TextEditingController(text: '0');
   final _notes = TextEditingController();
+  final _revisionReason = TextEditingController();
   final List<_OrderItemDraft> _items = [];
 
   List<Map<String, dynamic>> _suppliers = [];
@@ -73,6 +74,7 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
     _ppn.dispose();
     _pph23.dispose();
     _notes.dispose();
+    _revisionReason.dispose();
     for (final item in _items) {
       item.dispose();
     }
@@ -233,6 +235,8 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
       'requested_delivery_date': _date(_deliveryDate),
       'delivery_plant_code': _plantCode,
       'notes': _notes.text.trim(),
+      if (widget.order?.status == 'approved')
+        'revision_reason': _revisionReason.text.trim(),
       'payment_terms_days': int.parse(_paymentTerms.text),
       'discount_amount': double.parse(_discount.text),
       'ppn_rate': double.parse(_ppn.text),
@@ -310,6 +314,8 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
                     child: Text(
                       widget.order == null
                           ? 'Create Purchase Order'
+                          : widget.order!.status == 'approved'
+                          ? 'Revise ${widget.order!.poNumber}'
                           : 'Edit ${widget.order!.poNumber}',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w700,
@@ -348,7 +354,11 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.save_outlined),
-                    label: const Text('Save as Waiting Review'),
+                    label: Text(
+                      widget.order?.status == 'approved'
+                          ? 'Save Revision'
+                          : 'Save as Waiting Review',
+                    ),
                   ),
                 ],
               ),
@@ -378,6 +388,23 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
                 ],
               ),
               const SizedBox(height: 16),
+            ],
+            if (widget.order?.status == 'approved') ...[
+              _revisionNotice(),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _revisionReason,
+                minLines: 2,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  labelText: 'Revision Reason *',
+                  helperText: 'Recorded in the order revision history.',
+                ),
+                validator: (value) => value == null || value.trim().length < 3
+                    ? 'Enter a reason (at least 3 characters).'
+                    : null,
+              ),
+              const SizedBox(height: 20),
             ],
             Text(
               'PO Information',
@@ -736,6 +763,7 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
                       decimal: !isDiscreteUnit(item.unit),
                     ),
                     decoration: const InputDecoration(labelText: 'Quantity'),
+                    onChanged: (_) => setState(() {}),
                     validator: (value) =>
                         quantityValidationError(value, item.unit),
                   ),
@@ -775,8 +803,63 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
                 ),
               ],
             ),
+            if (widget.order?.status == 'approved') ...[
+              const SizedBox(height: 12),
+              _revisionQuantityPreview(item),
+            ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _revisionNotice() => Container(
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: const Color(0xFFFFFAEB),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: const Color(0xFFFEC84B)),
+    ),
+    child: const Text(
+      'Received quantities remain in the receiving history. Reducing the PO below received quantity closes it with excess receipt; increasing it can reopen the PO. Quantities already dispatched to a subcontractor cannot be reduced below the in-transit amount.',
+    ),
+  );
+
+  Widget _revisionQuantityPreview(_OrderItemDraft item) {
+    final proposed = double.tryParse(item.quantity.text) ?? 0;
+    final outstanding = (proposed - item.receivedQuantity)
+        .clamp(0, double.infinity)
+        .toDouble();
+    final excess = (item.receivedQuantity - proposed)
+        .clamp(0, double.infinity)
+        .toDouble();
+    final unit = unitLabel(item.unit);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Wrap(
+        spacing: 20,
+        runSpacing: 8,
+        children: [
+          Text(
+            'Received: ${formatQuantity(item.receivedQuantity, item.unit)} $unit',
+          ),
+          Text('Still due: ${formatQuantity(outstanding, item.unit)} $unit'),
+          Text('Excess receipt: ${formatQuantity(excess, item.unit)} $unit'),
+          if (item.inTransitQuantity > 0)
+            Text(
+              'Subcontract in transit: ${formatQuantity(item.inTransitQuantity, item.unit)} $unit',
+            ),
+          if (proposed < item.inTransitQuantity)
+            const Text(
+              'Quantity cannot be lower than subcontract output in transit.',
+              style: TextStyle(color: Color(0xFFB42318)),
+            ),
+        ],
       ),
     );
   }
@@ -845,6 +928,8 @@ class _OrderItemDraft {
     String price = '',
     String remark = '',
     this.unit = 'pcs',
+    this.receivedQuantity = 0,
+    this.inTransitQuantity = 0,
   }) : quantity = TextEditingController(text: quantity),
        price = TextEditingController(text: price),
        remark = TextEditingController(text: remark);
@@ -863,6 +948,8 @@ class _OrderItemDraft {
       price: item.unitPrice.toString(),
       remark: item.remark,
       unit: item.unit,
+      receivedQuantity: item.receivedQuantity,
+      inTransitQuantity: item.inTransitQuantity,
     );
   }
 
@@ -873,6 +960,8 @@ class _OrderItemDraft {
   String? processToCode;
   final int? id;
   String unit;
+  final double receivedQuantity;
+  final double inTransitQuantity;
   final TextEditingController quantity;
   final TextEditingController price;
   final TextEditingController remark;

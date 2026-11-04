@@ -11,6 +11,7 @@ class SalesOrderItemModel {
     required this.outstandingMaterialQuantity,
     required this.deliveredQuantity,
     required this.outstandingOrderQuantity,
+    required this.excessDeliveryQuantity,
     required this.outstandingNote,
     required this.unitPrice,
     required this.amount,
@@ -35,6 +36,7 @@ class SalesOrderItemModel {
       ),
       deliveredQuantity: _number(json['delivered_quantity']),
       outstandingOrderQuantity: _number(json['outstanding_order_quantity']),
+      excessDeliveryQuantity: _number(json['excess_delivery_quantity'] ?? 0),
       outstandingNote: json['outstanding_note']?.toString() ?? '',
       unitPrice: _number(json['unit_price']),
       amount: _number(json['amount']),
@@ -56,6 +58,7 @@ class SalesOrderItemModel {
   final double outstandingMaterialQuantity;
   final double deliveredQuantity;
   final double outstandingOrderQuantity;
+  final double excessDeliveryQuantity;
   final String outstandingNote;
   final double unitPrice;
   final double amount;

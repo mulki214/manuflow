@@ -3,6 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     Column,
     Date,
@@ -525,6 +526,26 @@ class PurchaseOrderItem(Base):
     remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
     purchase_order: Mapped[PurchaseOrder] = relationship(back_populates="items")
+
+
+class OrderRevision(Base):
+    """Immutable before/after snapshot for an approved SO or PO revision."""
+
+    __tablename__ = "order_revisions"
+    __table_args__ = (
+        UniqueConstraint("order_type", "order_number", "revision_number", name="uq_order_revision_number"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    order_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    order_number: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    changed_by: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    changed_by_name: Mapped[str] = mapped_column(String(201), nullable=False)
+    before_snapshot: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    after_snapshot: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class Quotation(Base):

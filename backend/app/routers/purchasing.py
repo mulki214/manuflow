@@ -26,6 +26,7 @@ from app.models import (
     FulfillmentStatus,
     InventoryMovement,
     InventoryMovementType,
+    OrderRevision,
     Plant,
     Product,
     ProductLot,
@@ -47,6 +48,7 @@ from app.models import (
 )
 from app.module_permissions import ensure_department_access, resolve_department_membership
 from app.operational_services import inventory_unit, require_whole_quantity, to_inventory_quantity
+from app.order_revision_services import append_order_revision, purchase_order_snapshot
 from app.purchasing_permissions import (
     PurchasingAccess,
     ensure_purchasing_access,
@@ -62,6 +64,7 @@ from app.purchasing_services import (
     sales_order_po_demand_rows,
 )
 from app.schemas import (
+    OrderRevisionResponse,
     PaginatedPurchaseOrders,
     PurchaseOrderCreate,
     PurchaseOrderItemResponse,
@@ -88,12 +91,13 @@ async def warehouse_access(db: AsyncSession, user: User) -> None:
     ensure_department_access(access, "Warehouse")
 
 
-async def get_order(db: AsyncSession, po_number: str) -> PurchaseOrder:
-    order = (
-        await db.execute(
-            select(PurchaseOrder).options(selectinload(PurchaseOrder.items)).where(PurchaseOrder.po_number == po_number)
-        )
-    ).scalar_one_or_none()
+async def get_order(db: AsyncSession, po_number: str, *, for_update: bool = False) -> PurchaseOrder:
+    statement = (
+        select(PurchaseOrder).options(selectinload(PurchaseOrder.items)).where(PurchaseOrder.po_number == po_number)
+    )
+    if for_update:
+        statement = statement.with_for_update()
+    order = (await db.execute(statement)).scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase order not found")
     return order
@@ -105,6 +109,20 @@ async def order_response(db: AsyncSession, order: PurchaseOrder, access: Purchas
     waiting = order.status == PurchaseOrderStatus.waiting_review
     creator_name = f"{creator.first_name} {creator.last_name}".strip() if creator else order.created_by
     reviewer_name = f"{reviewer.first_name} {reviewer.last_name}".strip() if reviewer else None
+    dispatch_rows = await db.execute(
+        select(
+            SubcontractDispatch.purchase_order_item_id,
+            func.coalesce(
+                func.sum(SubcontractDispatch.expected_output_quantity - SubcontractDispatch.returned_quantity), 0
+            ),
+        )
+        .where(
+            SubcontractDispatch.status != SubcontractDispatchStatus.reversed,
+            SubcontractDispatch.purchase_order_item_id.in_([item.id for item in order.items]),
+        )
+        .group_by(SubcontractDispatch.purchase_order_item_id)
+    )
+    in_transit = {item_id: max(Decimal(str(amount)), Decimal("0")) for item_id, amount in dispatch_rows.all()}
     item_responses = [
         PurchaseOrderItemResponse(
             id=item.id,
@@ -121,6 +139,7 @@ async def order_response(db: AsyncSession, order: PurchaseOrder, access: Purchas
             received_quantity=item.received_quantity,
             outstanding_quantity=max(item.quantity_grams - item.received_quantity, Decimal("0")),
             excess_quantity=max(item.received_quantity - item.quantity_grams, Decimal("0")),
+            in_transit_quantity=in_transit.get(item.id, Decimal("0")),
             unit_price=item.unit_price,
             amount=item.amount,
             remark=item.remark,
@@ -224,6 +243,20 @@ async def apply_order_data(
         )
 
     existing_by_id = {item.id: item for item in order.items}
+    in_transit_rows = await db.execute(
+        select(
+            SubcontractDispatch.purchase_order_item_id,
+            func.coalesce(
+                func.sum(SubcontractDispatch.expected_output_quantity - SubcontractDispatch.returned_quantity), 0
+            ),
+        )
+        .where(
+            SubcontractDispatch.status != SubcontractDispatchStatus.reversed,
+            SubcontractDispatch.purchase_order_item_id.in_(list(existing_by_id)),
+        )
+        .group_by(SubcontractDispatch.purchase_order_item_id)
+    )
+    in_transit_by_item = {item_id: max(Decimal(str(amount)), Decimal("0")) for item_id, amount in in_transit_rows.all()}
     new_items: list[PurchaseOrderItem] = []
     amounts: list[Decimal] = []
     so_items_by_id = {item.id: item for item in sales_order.items} if sales_order else {}
@@ -304,7 +337,12 @@ async def apply_order_data(
                         PurchaseOrder.po_number != (order.po_number or ""),
                     )
                 ) or Decimal("0")
-                if allocated_elsewhere + item_data.quantity_grams > demand:
+                previous_item = existing_by_id.get(item_data.id) if item_data.id else None
+                exceeds_demand = allocated_elsewhere + item_data.quantity_grams > demand
+                increases_existing_excess = (
+                    previous_item is None or item_data.quantity_grams > previous_item.quantity_grams
+                )
+                if exceeds_demand and increases_existing_excess:
                     raise HTTPException(
                         status_code=409,
                         detail=f"PO quantity exceeds the remaining Sales Order demand for {product.code}",
@@ -315,6 +353,15 @@ async def apply_order_data(
         if item_data.id and not existing:
             raise HTTPException(status_code=422, detail="Purchase Order item does not belong to this order")
         if existing:
+            in_transit_quantity = in_transit_by_item.get(existing.id, Decimal("0"))
+            if item_data.quantity_grams < in_transit_quantity:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Revised quantity for {existing.product_code} cannot be below its "
+                        "subcontract output currently in transit. Receive or reverse it first."
+                    ),
+                )
             if existing.product_code != product.code or existing.unit != item_data.unit.value:
                 raise HTTPException(status_code=422, detail="Product and unit cannot change on an existing PO line")
             existing.line_number = line_number
@@ -347,6 +394,14 @@ async def apply_order_data(
             )
 
     for removed in existing_by_id.values():
+        if in_transit_by_item.get(removed.id, Decimal("0")) > 0:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"PO item {removed.product_code} cannot be removed while subcontract output "
+                    "is in transit. Receive or reverse it first."
+                ),
+            )
         if removed.received_quantity > 0:
             raise HTTPException(status_code=422, detail="A PO line with Receiving history cannot be removed")
         await db.delete(removed)
@@ -482,6 +537,7 @@ async def sales_orders_for_purchase_order(
 ) -> dict[str, list[dict[str, object]]]:
     """Approved SO candidates with output/BOM quantities still available for PO allocation."""
     await current_access(db, current_user)
+    current_po = await get_order(db, exclude_po_number) if exclude_po_number else None
     orders = (
         (
             await db.execute(
@@ -497,6 +553,24 @@ async def sales_orders_for_purchase_order(
         )
         .scalars()
         .all()
+    )
+    if current_po and current_po.sales_order_number:
+        current_sales_order = await db.get(SalesOrder, current_po.sales_order_number)
+        if (
+            current_sales_order
+            and current_sales_order.status == SalesOrderStatus.approved
+            and all(row.sales_order_number != current_sales_order.sales_order_number for row in orders)
+        ):
+            current_sales_order = (
+                await db.execute(
+                    select(SalesOrder)
+                    .options(selectinload(SalesOrder.items))
+                    .where(SalesOrder.sales_order_number == current_sales_order.sales_order_number)
+                )
+            ).scalar_one()
+            orders.append(current_sales_order)
+    existing_po_lines = (
+        {(item.sales_order_item_id, item.product_code): item for item in current_po.items} if current_po else {}
     )
     result: list[dict[str, object]] = []
     active_processes = (
@@ -532,7 +606,8 @@ async def sales_orders_for_purchase_order(
                 materials,
             )
             for product_code, demand, unit, is_output in demand_rows:
-                if demand <= 0:
+                existing_line = existing_po_lines.get((so_item.id, product_code))
+                if demand <= 0 and existing_line is None:
                     continue
                 already = await db.scalar(
                     select(func.coalesce(func.sum(PurchaseOrderItem.quantity_grams), 0))
@@ -544,7 +619,11 @@ async def sales_orders_for_purchase_order(
                         *([PurchaseOrder.po_number != exclude_po_number] if exclude_po_number else []),
                     )
                 ) or Decimal("0")
-                available = demand - already
+                available = max(demand - already, Decimal("0"))
+                if existing_line:
+                    # Keep the current PO's selected SO/BOM product available
+                    # while editing an order whose SO is now closed or revised.
+                    available = max(available, existing_line.quantity_grams)
                 if available <= 0:
                     continue
                 product = await db.get(Product, product_code)
@@ -1010,6 +1089,28 @@ async def get_purchase_order(
     return await order_response(db, await get_order(db, po_number), access)
 
 
+@router.get("/{po_number}/revisions", response_model=list[OrderRevisionResponse])
+async def purchase_order_revisions(
+    po_number: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[OrderRevisionResponse]:
+    await current_access(db, current_user)
+    await get_order(db, po_number)
+    rows = (
+        (
+            await db.execute(
+                select(OrderRevision)
+                .where(OrderRevision.order_type == "purchase_order", OrderRevision.order_number == po_number)
+                .order_by(OrderRevision.revision_number.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [OrderRevisionResponse.model_validate(row) for row in rows]
+
+
 @router.get("/{po_number}/pdf")
 async def download_purchase_order_pdf(
     po_number: str,
@@ -1035,10 +1136,24 @@ async def update_purchase_order(
     current_user: User = Depends(get_current_user),
 ) -> PurchaseOrderResponse:
     access = await current_access(db, current_user)
-    order = await get_order(db, po_number)
+    order = await get_order(db, po_number, for_update=True)
     if order.status == PurchaseOrderStatus.rejected:
         raise HTTPException(status_code=409, detail="Rejected Purchase Order cannot be edited")
+    is_revision = order.status == PurchaseOrderStatus.approved
+    if is_revision and not data.revision_reason:
+        raise HTTPException(status_code=422, detail="Revision reason is required for an approved Purchase Order")
+    before_snapshot = await purchase_order_snapshot(db, order) if is_revision else None
     await apply_order_data(db, order, data)
+    if is_revision and before_snapshot is not None:
+        await append_order_revision(
+            db,
+            order_type="purchase_order",
+            order_number=order.po_number,
+            reason=data.revision_reason or "",
+            user=current_user,
+            before_snapshot=before_snapshot,
+            after_snapshot=await purchase_order_snapshot(db, order),
+        )
     await commit_order(db, order)
     return await order_response(db, await get_order(db, po_number), access)
 

@@ -914,6 +914,7 @@ class _SalesOrderPageState extends State<SalesOrderPage> {
                       DataColumn(label: Text('MATERIAL RECEIVED')),
                       DataColumn(label: Text('OUTSTANDING MATERIAL')),
                       DataColumn(label: Text('DELIVERED')),
+                      DataColumn(label: Text('EXCESS DELIVERY')),
                       DataColumn(label: Text('OUTSTANDING ORDER')),
                       DataColumn(label: Text('OUTSTANDING NOTE')),
                       DataColumn(label: Text('AMOUNT')),
@@ -950,6 +951,19 @@ class _SalesOrderPageState extends State<SalesOrderPage> {
                               ),
                               DataCell(
                                 Text(_formatNumber(entry.$2.deliveredQuantity)),
+                              ),
+                              DataCell(
+                                Text(
+                                  entry.$2.excessDeliveryQuantity > 0
+                                      ? '${_formatNumber(entry.$2.excessDeliveryQuantity)} ${unitLabel(entry.$2.unit)}'
+                                      : '-',
+                                  style: entry.$2.excessDeliveryQuantity > 0
+                                      ? const TextStyle(
+                                          color: Color(0xFFB54708),
+                                          fontWeight: FontWeight.w600,
+                                        )
+                                      : null,
+                                ),
                               ),
                               DataCell(
                                 Text(
@@ -1018,6 +1032,10 @@ class _SalesOrderPageState extends State<SalesOrderPage> {
                   ],
                 ),
                 if (order.notes.isNotEmpty) _detail('Notes', order.notes),
+                const SizedBox(height: 18),
+                _revisionHistory(
+                  '/sales-orders/${Uri.encodeComponent(order.salesOrderNumber)}/revisions',
+                ),
                 if (order.rejectionReason != null)
                   _detail('Rejection Reason', order.rejectionReason!),
               ],
@@ -1052,6 +1070,70 @@ class _SalesOrderPageState extends State<SalesOrderPage> {
       ),
     );
   }
+
+  Widget _revisionHistory(String path) => FutureBuilder<dynamic>(
+    future: widget.auth.api.getJson(path),
+    builder: (context, snapshot) {
+      final revisions = snapshot.data is List
+          ? List<Map<String, dynamic>>.from(snapshot.data as List)
+          : const <Map<String, dynamic>>[];
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Revision History',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          if (snapshot.connectionState == ConnectionState.waiting)
+            const LinearProgressIndicator()
+          else if (snapshot.hasError)
+            const Text('Unable to load revision history.')
+          else if (revisions.isEmpty)
+            const Text('No revisions recorded.')
+          else
+            ...revisions.map((revision) {
+              final before = revision['before_snapshot'] as Map? ?? const {};
+              final after = revision['after_snapshot'] as Map? ?? const {};
+              String quantities(Map snapshot) {
+                final items = snapshot['items'] as List? ?? const [];
+                if (items.isEmpty) return '-';
+                return items
+                    .map((raw) {
+                      final item = raw as Map;
+                      return '${item['part_name'] ?? item['product_code']}: ${item['quantity'] ?? '-'} ${item['unit'] ?? ''}';
+                    })
+                    .join(' • ');
+              }
+
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Revision ${revision['revision_number']} • ${revision['changed_by_name'] ?? '-'}',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 4),
+                      Text('Reason: ${revision['reason'] ?? '-'}'),
+                      Text(
+                        'Status: ${before['fulfillment_status'] ?? '-'} → ${after['fulfillment_status'] ?? '-'}',
+                      ),
+                      Text('Before: ${quantities(before)}'),
+                      Text('After: ${quantities(after)}'),
+                      Text('Recorded: ${revision['created_at'] ?? '-'}'),
+                    ],
+                  ),
+                ),
+              );
+            }),
+        ],
+      );
+    },
+  );
 
   Widget _detail(String label, String value) => SizedBox(
     width: 280,
