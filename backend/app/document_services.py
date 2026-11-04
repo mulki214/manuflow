@@ -161,6 +161,14 @@ def purchase_order_pdf_bytes(order: Any) -> bytes:
     cell, label, header, _ = _pdf_styles(styles)
     center = ParagraphStyle("center", parent=styles["Normal"], alignment=TA_CENTER)
     right = ParagraphStyle("right", parent=styles["Normal"], alignment=TA_RIGHT)
+    order_kind_value = getattr(
+        getattr(order, "order_kind", "purchase"),
+        "value",
+        getattr(order, "order_kind", "purchase"),
+    )
+    sales_order_or_purpose = getattr(order, "sales_order_number", None) or (
+        "Internal / Stock" if order_kind_value == "purchase" else "-"
+    )
     story = [
         Paragraph("<b>PURCHASE ORDER</b>", styles["Title"]),
         Paragraph(f"<b>{order.po_number}</b>", center),
@@ -176,8 +184,8 @@ def purchase_order_pdf_bytes(order: Any) -> bytes:
                     order.requested_delivery_date.strftime("%d/%m/%Y"),
                 ],
                 [
-                    "Sales Order",
-                    getattr(order, "sales_order_number", None) or "-",
+                    "Sales Order / Purpose",
+                    sales_order_or_purpose,
                     "PO Type",
                     str(
                         getattr(

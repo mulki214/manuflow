@@ -12,6 +12,7 @@ from app.models import (
     ProductCategory,
     ProductSupplySource,
     PurchaseOrderKind,
+    PurchaseOrderPurpose,
     PurchaseOrderStatus,
     PurchaseRequestItemApprovalStatus,
     PurchaseRequestStatus,
@@ -402,6 +403,7 @@ class PurchaseOrderItemInput(BaseModel):
 class PurchaseOrderBase(BaseModel):
     sales_order_number: str | None = Field(default=None, max_length=20)
     order_kind: PurchaseOrderKind = PurchaseOrderKind.purchase
+    purchase_purpose: PurchaseOrderPurpose | None = None
     po_date: date
     supplier_code: str = Field(min_length=1, max_length=15)
     quotation_reference: str | None = Field(default=None, max_length=100)
@@ -429,6 +431,16 @@ class PurchaseOrderBase(BaseModel):
     def validate_purchase_order(self) -> "PurchaseOrderBase":
         if self.order_kind == PurchaseOrderKind.subcontract and not self.sales_order_number:
             raise ValueError("A subcontract Purchase Order must reference a Sales Order")
+        if self.order_kind == PurchaseOrderKind.subcontract and self.purchase_purpose not in (
+            None,
+            PurchaseOrderPurpose.sales_order,
+        ):
+            raise ValueError("A subcontract Purchase Order must use the Sales Order purpose")
+        if self.order_kind == PurchaseOrderKind.purchase and self.purchase_purpose is not None:
+            if self.sales_order_number and self.purchase_purpose != PurchaseOrderPurpose.sales_order:
+                raise ValueError("A Sales Order-linked Purchase Order must use the Sales Order purpose")
+            if not self.sales_order_number and self.purchase_purpose != PurchaseOrderPurpose.internal_stock:
+                raise ValueError("Select Internal / Stock replenishment to create a PO without a Sales Order")
         if self.order_kind == PurchaseOrderKind.subcontract:
             if any(not item.process_to_code for item in self.items):
                 raise ValueError("A next process is required for every subcontract item")

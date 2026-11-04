@@ -37,6 +37,7 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
   String? _plantCode;
   String? _salesOrderNumber;
   String _orderKind = 'purchase';
+  String _purchasePurpose = 'sales_order';
   late DateTime _poDate;
   late DateTime _deliveryDate;
   DateTime? _quotationDate;
@@ -57,6 +58,11 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
     _plantCode = order?.deliveryPlantCode;
     _salesOrderNumber = order?.salesOrderNumber;
     _orderKind = order?.orderKind ?? 'purchase';
+    _purchasePurpose = order == null
+        ? 'sales_order'
+        : order.salesOrderNumber == null
+        ? 'internal_stock'
+        : 'sales_order';
     _quotationReference.text = order?.quotationReference ?? '';
     _paymentTerms.text = order?.paymentTermsDays.toString() ?? '30';
     _discount.text = order?.discountAmount.toString() ?? '0';
@@ -134,6 +140,9 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
       _products = [];
       for (final item in _items) {
         item.productCode = null;
+        item.salesOrderItemId = null;
+        item.candidateKey = null;
+        item.quantity.clear();
       }
     });
     try {
@@ -161,6 +170,23 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
         item.salesOrderItemId = null;
         item.candidateKey = null;
         item.productCode = null;
+        item.processFromCode = null;
+        item.processToCode = null;
+      }
+    });
+  }
+
+  void _changePurchasePurpose(String? purpose) {
+    if (purpose == null || purpose == _purchasePurpose) return;
+    setState(() {
+      _purchasePurpose = purpose;
+      _salesOrderNumber = null;
+      _soCandidates = [];
+      for (final item in _items) {
+        item.salesOrderItemId = null;
+        item.candidateKey = null;
+        item.productCode = null;
+        item.quantity.clear();
         item.processFromCode = null;
         item.processToCode = null;
       }
@@ -202,17 +228,23 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
     if (!_formKey.currentState!.validate()) return;
     if (_supplierCode == null ||
         _plantCode == null ||
-        (_salesOrderNumber == null && widget.order?.salesOrderNumber != null) ||
-        (_salesOrderNumber == null && widget.order == null)) {
+        (_purchasePurpose == 'sales_order' && _salesOrderNumber == null)) {
       setState(
         () => _error =
-            'Supplier, Plant, and Sales Order are required for new Purchase Orders.',
+            'Supplier and Plant are required. Select a Sales Order for customer fulfillment.',
+      );
+      return;
+    }
+    if (_orderKind == 'subcontract' && _purchasePurpose != 'sales_order') {
+      setState(
+        () => _error =
+            'Subcontract Purchase Orders must reference a Sales Order.',
       );
       return;
     }
     final productCodes = _items.map((item) => item.productCode).toList();
     if (productCodes.any((code) => code == null) ||
-        (_salesOrderNumber != null &&
+        (_purchasePurpose == 'sales_order' &&
             _items.any((item) => item.salesOrderItemId == null))) {
       setState(() => _error = 'Select a Product for every item.');
       return;
@@ -227,6 +259,7 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
       'po_date': _date(_poDate),
       'sales_order_number': _salesOrderNumber,
       'order_kind': _orderKind,
+      'purchase_purpose': _purchasePurpose,
       'supplier_code': _supplierCode,
       'quotation_reference': _quotationReference.text.trim().isEmpty
           ? null
@@ -429,39 +462,89 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
                         child: Text('Subcontract'),
                       ),
                     ],
-                    onChanged: (value) => setState(() {
-                      _orderKind = value ?? 'purchase';
-                      for (final item in _items) {
-                        item.processFromCode = null;
-                        item.processToCode = null;
+                    onChanged: (value) {
+                      final nextKind = value ?? 'purchase';
+                      if (widget.order != null &&
+                          widget.order!.salesOrderNumber == null &&
+                          nextKind == 'subcontract') {
+                        setState(
+                          () => _error =
+                              'An internal stock PO cannot be converted to subcontract. Create a subcontract PO linked to an SO.',
+                        );
+                        return;
                       }
-                    }),
+                      setState(() {
+                        _error = null;
+                        _orderKind = nextKind;
+                        if (_orderKind == 'subcontract') {
+                          _purchasePurpose = 'sales_order';
+                          for (final item in _items) {
+                            item.salesOrderItemId = null;
+                            item.candidateKey = null;
+                            item.productCode = null;
+                            item.quantity.clear();
+                          }
+                        }
+                        for (final item in _items) {
+                          item.processFromCode = null;
+                          item.processToCode = null;
+                        }
+                      });
+                    },
                   ),
                 ),
                 _fieldBox(
-                  SearchableSelectField<String>(
-                    value: _salesOrderNumber,
-                    labelText: 'Sales Order *',
-                    searchHint: 'Search approved Sales Order',
-                    options: _salesOrders
-                        .map(
-                          (so) => SearchableSelectOption(
-                            value: so['sales_order_number'].toString(),
-                            label:
-                                '${so['sales_order_number']} — ${so['customer_name']}',
-                            searchTerms: [
-                              so['sales_order_number'].toString(),
-                              so['customer_name']?.toString() ?? '',
-                              so['customer_po_number']?.toString() ?? '',
-                            ],
-                          ),
-                        )
-                        .toList(),
-                    onChanged: _changeSalesOrder,
-                    validator: (value) =>
-                        value == null ? 'Sales Order is required' : null,
+                  DropdownButtonFormField<String>(
+                    initialValue: _purchasePurpose,
+                    decoration: const InputDecoration(labelText: 'Purpose *'),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'sales_order',
+                        child: Text('Sales Order fulfillment'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'internal_stock',
+                        child: Text('Internal / Stock replenishment'),
+                      ),
+                    ],
+                    onChanged:
+                        widget.order != null || _orderKind == 'subcontract'
+                        ? null
+                        : _changePurchasePurpose,
                   ),
                 ),
+                if (_purchasePurpose == 'internal_stock')
+                  _fieldBox(
+                    InputDecorator(
+                      decoration: const InputDecoration(labelText: 'SO Link'),
+                      child: const Text('Internal stock, no SO'),
+                    ),
+                  ),
+                if (_purchasePurpose == 'sales_order')
+                  _fieldBox(
+                    SearchableSelectField<String>(
+                      value: _salesOrderNumber,
+                      labelText: 'Sales Order *',
+                      searchHint: 'Search approved Sales Order',
+                      options: _salesOrders
+                          .map(
+                            (so) => SearchableSelectOption(
+                              value: so['sales_order_number'].toString(),
+                              label:
+                                  '${so['sales_order_number']} — ${so['customer_name']}',
+                              searchTerms: [
+                                so['sales_order_number'].toString(),
+                                so['customer_name']?.toString() ?? '',
+                                so['customer_po_number']?.toString() ?? '',
+                              ],
+                            ),
+                          )
+                          .toList(),
+                      onChanged: _changeSalesOrder,
+                      validator: (value) =>
+                          value == null ? 'Sales Order is required' : null,
+                    ),
+                  ),
                 _fieldBox(
                   _dateField('PO Date', _poDate, (value) => _poDate = value),
                 ),
@@ -683,7 +766,7 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
               spacing: 12,
               runSpacing: 12,
               children: [
-                if (_salesOrderNumber != null)
+                if (_purchasePurpose == 'sales_order')
                   SizedBox(
                     width: 390,
                     child: SearchableSelectField<String>(
@@ -691,7 +774,9 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
                       labelText: _orderKind == 'subcontract'
                           ? 'SO Product *'
                           : 'SO Product / BOM Material *',
-                      searchHint: 'Search linked product',
+                      searchHint: _salesOrderNumber == null
+                          ? 'Select Sales Order first'
+                          : 'Search linked product',
                       options: candidates
                           .map(
                             (candidate) => SearchableSelectOption(
@@ -781,7 +866,7 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
                           ),
                         )
                         .toList(),
-                    onChanged: _salesOrderNumber == null
+                    onChanged: _purchasePurpose == 'internal_stock'
                         ? (value) => setState(() => item.unit = value ?? 'pcs')
                         : null,
                   ),

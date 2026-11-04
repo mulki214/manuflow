@@ -33,6 +33,7 @@ from app.models import (
     PurchaseOrder,
     PurchaseOrderItem,
     PurchaseOrderKind,
+    PurchaseOrderPurpose,
     PurchaseOrderStatus,
     SalesOrder,
     SalesOrderItem,
@@ -212,6 +213,8 @@ async def apply_order_data(
     data: PurchaseOrderCreate | PurchaseOrderUpdate,
 ) -> None:
     sales_order = None
+    if data.order_kind == PurchaseOrderKind.subcontract and not data.sales_order_number:
+        raise HTTPException(status_code=422, detail="A subcontract Purchase Order must reference a Sales Order")
     if data.sales_order_number:
         sales_order = (
             await db.execute(
@@ -223,11 +226,11 @@ async def apply_order_data(
         ).scalar_one_or_none()
         if not sales_order or sales_order.status != SalesOrderStatus.approved:
             raise HTTPException(status_code=422, detail="PO must reference an approved Sales Order")
-    elif order.sales_order_number is None and order.po_number:
-        # Preserve the ability to edit historical POs without inventing an SO.
+    elif order.sales_order_number is None:
+        # Internal stock Purchase Orders have no Sales Order association.
         sales_order = None
     else:
-        raise HTTPException(status_code=422, detail="A Sales Order is required for every new Purchase Order")
+        raise HTTPException(status_code=409, detail="A Purchase Order's Sales Order association cannot be removed")
 
     supplier = await db.get(Corporation, data.supplier_code)
     if not supplier or not supplier.is_supplier:
@@ -273,8 +276,14 @@ async def apply_order_data(
                 detail=f"Product {product.code} is not registered for supplier {supplier.code}",
             )
         so_item = so_items_by_id.get(item_data.sales_order_item_id) if item_data.sales_order_item_id else None
+        allocation = None
         if sales_order and not so_item:
             raise HTTPException(status_code=422, detail="Every PO line must be linked to an item on its Sales Order")
+        if not sales_order and item_data.sales_order_item_id is not None:
+            raise HTTPException(
+                status_code=422,
+                detail="An internal Purchase Order line cannot reference a Sales Order item",
+            )
         if so_item:
             if data.order_kind == PurchaseOrderKind.subcontract and product.code != so_item.product_code:
                 raise HTTPException(
@@ -512,8 +521,15 @@ async def create_purchase_order(
     current_user: User = Depends(get_current_user),
 ) -> PurchaseOrderResponse:
     access = await current_access(db, current_user)
-    if not data.sales_order_number:
-        raise HTTPException(status_code=422, detail="A Sales Order is required for every Purchase Order")
+    if (
+        data.order_kind == PurchaseOrderKind.purchase
+        and not data.sales_order_number
+        and data.purchase_purpose != PurchaseOrderPurpose.internal_stock
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Select Internal / Stock replenishment to create a PO without a Sales Order",
+        )
     order = PurchaseOrder(
         po_number=await generate_purchase_order_number(db, data.po_date),
         status=PurchaseOrderStatus.waiting_review,
@@ -1139,6 +1155,11 @@ async def update_purchase_order(
     order = await get_order(db, po_number, for_update=True)
     if order.status == PurchaseOrderStatus.rejected:
         raise HTTPException(status_code=409, detail="Rejected Purchase Order cannot be edited")
+    if order.sales_order_number != data.sales_order_number:
+        raise HTTPException(
+            status_code=409,
+            detail="A Purchase Order's purpose and Sales Order association cannot be changed after creation",
+        )
     is_revision = order.status == PurchaseOrderStatus.approved
     if is_revision and not data.revision_reason:
         raise HTTPException(status_code=422, detail="Revision reason is required for an approved Purchase Order")

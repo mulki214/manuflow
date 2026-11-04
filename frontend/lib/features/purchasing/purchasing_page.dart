@@ -787,6 +787,9 @@ class _PurchasingPageState extends State<PurchasingPage> {
                     Text(
                       '${order.salesOrderNumber} • ${order.orderKind == 'subcontract' ? 'Subcontract' : 'Purchase'}',
                     ),
+                  ] else if (order.orderKind == 'purchase') ...[
+                    const SizedBox(height: 4),
+                    const Text('Internal / Stock replenishment'),
                   ],
                   const SizedBox(height: 4),
                   Text(
@@ -902,7 +905,15 @@ class _PurchasingPageState extends State<PurchasingPage> {
                     _detail('PO Date', _formatDate(order.poDate)),
                     _detail(
                       'Sales Order',
-                      order.salesOrderNumber ?? 'Legacy PO',
+                      order.salesOrderNumber ??
+                          'Internal stock (not linked to SO)',
+                    ),
+                    _detail(
+                      'Purpose',
+                      order.salesOrderNumber == null &&
+                              order.orderKind == 'purchase'
+                          ? 'Internal / Stock replenishment'
+                          : 'Sales Order fulfillment',
                     ),
                     _detail(
                       'PO Type',
