@@ -13,6 +13,7 @@ class PurchaseOrderItemModel {
     required this.receivedQuantity,
     required this.outstandingQuantity,
     required this.excessQuantity,
+    required this.inTransitQuantity,
     required this.unitPrice,
     required this.amount,
     required this.remark,
@@ -33,6 +34,7 @@ class PurchaseOrderItemModel {
       receivedQuantity: _number(json['received_quantity']),
       outstandingQuantity: _number(json['outstanding_quantity']),
       excessQuantity: _number(json['excess_quantity'] ?? 0),
+      inTransitQuantity: _number(json['in_transit_quantity'] ?? 0),
       unitPrice: _number(json['unit_price']),
       amount: _number(json['amount']),
       remark: json['remark']?.toString() ?? '',
@@ -52,6 +54,7 @@ class PurchaseOrderItemModel {
   final double receivedQuantity;
   final double outstandingQuantity;
   final double excessQuantity;
+  final double inTransitQuantity;
   final double unitPrice;
   final double amount;
   final String remark;

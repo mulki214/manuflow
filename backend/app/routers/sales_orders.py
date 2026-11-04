@@ -22,8 +22,10 @@ from app.models import (
     FinishGoodReceipt,
     FinishGoodStatus,
     FulfillmentStatus,
+    OrderRevision,
     Product,
     ProductCategory,
+    PurchaseOrderItem,
     SalesOrder,
     SalesOrderItem,
     SalesOrderMaterialAllocation,
@@ -39,6 +41,7 @@ from app.module_permissions import (
     ensure_department_head,
     resolve_department_access,
 )
+from app.order_revision_services import append_order_revision, sales_order_snapshot
 from app.sales_order_services import (
     calculate_sales_line_amount,
     calculate_sales_total,
@@ -47,6 +50,7 @@ from app.sales_order_services import (
     generate_sales_order_number,
 )
 from app.schemas import (
+    OrderRevisionResponse,
     PaginatedSalesOrders,
     SalesOrderCreate,
     SalesOrderItemResponse,
@@ -65,14 +69,15 @@ async def current_access(db: AsyncSession, user: User) -> DepartmentModuleAccess
     return access
 
 
-async def get_order(db: AsyncSession, sales_order_number: str) -> SalesOrder:
-    order = (
-        await db.execute(
-            select(SalesOrder)
-            .options(selectinload(SalesOrder.items))
-            .where(SalesOrder.sales_order_number == sales_order_number)
-        )
-    ).scalar_one_or_none()
+async def get_order(db: AsyncSession, sales_order_number: str, *, for_update: bool = False) -> SalesOrder:
+    statement = (
+        select(SalesOrder)
+        .options(selectinload(SalesOrder.items))
+        .where(SalesOrder.sales_order_number == sales_order_number)
+    )
+    if for_update:
+        statement = statement.with_for_update()
+    order = (await db.execute(statement)).scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sales order not found")
     return order
@@ -156,6 +161,7 @@ async def order_response(db: AsyncSession, order: SalesOrder, access: Department
             ),
             delivered_quantity=item.delivered_quantity,
             outstanding_order_quantity=max(item.quantity_grams - item.delivered_quantity, Decimal("0")),
+            excess_delivery_quantity=max(item.delivered_quantity - item.quantity_grams, Decimal("0")),
             outstanding_note=item.outstanding_note,
             unit_price=item.unit_price,
             amount=item.amount,
@@ -299,6 +305,17 @@ async def apply_order_data(
     order.subtotal = total
     order.grand_total = total
     for removed in existing_by_id.values():
+        has_purchase_order = await db.scalar(
+            select(PurchaseOrderItem.id).where(PurchaseOrderItem.sales_order_item_id == removed.id).limit(1)
+        )
+        if has_purchase_order:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"SO item {removed.product_code} is linked to a Purchase Order and cannot be removed. "
+                    "Keep the SO line and revise its quantity instead."
+                ),
+            )
         if removed.delivered_quantity > 0 or removed.material_received_quantity > 0:
             raise HTTPException(status_code=422, detail="An SO line with transaction history cannot be removed")
         await db.delete(removed)
@@ -311,13 +328,7 @@ async def apply_order_data(
     db.add(order)
     await db.flush()
     bom_rows = list(
-        (
-            await db.execute(
-                select(BillOfMaterialItem).where(BillOfMaterialItem.is_active.is_(True))
-            )
-        )
-        .scalars()
-        .all()
+        (await db.execute(select(BillOfMaterialItem).where(BillOfMaterialItem.is_active.is_(True)))).scalars().all()
     )
     bom_outputs = {
         record.finished_product_code: (record.output_quantity, record.output_unit)
@@ -355,11 +366,9 @@ async def apply_order_data(
             if allocation:
                 if allocation.unit != unit:
                     raise HTTPException(status_code=422, detail="Material unit cannot change after SO creation")
-                if allocation.received_quantity > required_quantity:
-                    raise HTTPException(
-                        status_code=422,
-                        detail="BOM or SO change cannot reduce a material allocation below its received quantity",
-                    )
+                # Keep receiving history intact. If the revised BOM/SO needs
+                # less material than was already received, the difference is
+                # surplus stock and must not block the SO revision.
                 allocation.required_quantity = required_quantity
             else:
                 db.add(
@@ -373,8 +382,9 @@ async def apply_order_data(
                 )
         for allocation in existing_allocations.values():
             if allocation.received_quantity > 0:
-                raise HTTPException(status_code=422, detail="A received SO material allocation cannot be removed")
-            await db.delete(allocation)
+                allocation.required_quantity = Decimal("0")
+            else:
+                await db.delete(allocation)
 
 
 async def commit_order(db: AsyncSession, order: SalesOrder) -> None:
@@ -489,6 +499,28 @@ async def get_sales_order(
     return await order_response(db, await get_order(db, sales_order_number), access)
 
 
+@router.get("/{sales_order_number}/revisions", response_model=list[OrderRevisionResponse])
+async def sales_order_revisions(
+    sales_order_number: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[OrderRevisionResponse]:
+    await current_access(db, current_user)
+    await get_order(db, sales_order_number)
+    rows = (
+        (
+            await db.execute(
+                select(OrderRevision)
+                .where(OrderRevision.order_type == "sales_order", OrderRevision.order_number == sales_order_number)
+                .order_by(OrderRevision.revision_number.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [OrderRevisionResponse.model_validate(row) for row in rows]
+
+
 @router.get("/{sales_order_number}/pdf")
 async def download_sales_order_pdf(
     sales_order_number: str,
@@ -514,10 +546,59 @@ async def update_sales_order(
     current_user: User = Depends(get_current_user),
 ) -> SalesOrderResponse:
     access = await current_access(db, current_user)
-    order = await get_order(db, sales_order_number)
+    order = await get_order(db, sales_order_number, for_update=True)
     if order.status == SalesOrderStatus.rejected:
         raise HTTPException(status_code=409, detail="Rejected Sales Order cannot be edited")
+    is_revision = order.status == SalesOrderStatus.approved
+    if is_revision and not data.revision_reason:
+        raise HTTPException(status_code=422, detail="Revision reason is required for an approved Sales Order")
+    before_snapshot = await sales_order_snapshot(db, order) if is_revision else None
+
+    dispatched_rows = await db.execute(
+        select(DeliveryLine.sales_order_item_id, func.coalesce(func.sum(DeliveryLine.quantity), 0))
+        .join(Delivery, Delivery.delivery_number == DeliveryLine.delivery_number)
+        .where(
+            Delivery.status == DeliveryStatus.dispatched,
+            DeliveryLine.sales_order_item_id.in_([item.id for item in order.items]),
+        )
+        .group_by(DeliveryLine.sales_order_item_id)
+    )
+    dispatched = {item_id: Decimal(str(amount)) for item_id, amount in dispatched_rows.all()}
+    current_items = {item.id: item for item in order.items}
+    submitted_item_ids = {item.id for item in data.items if item.id is not None}
+    for existing in order.items:
+        if existing.id not in submitted_item_ids and dispatched.get(existing.id, Decimal("0")) > 0:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Sales Order item {existing.product_code} cannot be removed while a delivery "
+                    "is in transit. Confirm or reverse the delivery first."
+                ),
+            )
+    for item_data in data.items:
+        existing = current_items.get(item_data.id) if item_data.id else None
+        if not existing:
+            continue
+        in_transit = dispatched.get(existing.id, Decimal("0"))
+        if in_transit and item_data.quantity_grams < existing.delivered_quantity + in_transit:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Revised quantity for {existing.product_code} cannot be below delivered plus "
+                    "currently dispatched quantity. Confirm or reverse the delivery first."
+                ),
+            )
     await apply_order_data(db, order, data)
+    if is_revision and before_snapshot is not None:
+        await append_order_revision(
+            db,
+            order_type="sales_order",
+            order_number=order.sales_order_number,
+            reason=data.revision_reason or "",
+            user=current_user,
+            before_snapshot=before_snapshot,
+            after_snapshot=await sales_order_snapshot(db, order),
+        )
     await commit_order(db, order)
     return await order_response(db, await get_order(db, sales_order_number), access)
 

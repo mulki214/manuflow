@@ -449,7 +449,12 @@ class PurchaseOrderCreate(PurchaseOrderBase):
 
 
 class PurchaseOrderUpdate(PurchaseOrderBase):
-    pass
+    revision_reason: str | None = Field(default=None, min_length=3, max_length=2000)
+
+    @field_validator("revision_reason")
+    @classmethod
+    def strip_revision_reason(cls, value: str | None) -> str | None:
+        return value.strip() if value else value
 
 
 class PurchaseOrderItemResponse(BaseModel):
@@ -467,6 +472,7 @@ class PurchaseOrderItemResponse(BaseModel):
     received_quantity: Decimal
     outstanding_quantity: Decimal
     excess_quantity: Decimal
+    in_transit_quantity: Decimal = Decimal("0")
     unit_price: Decimal
     amount: Decimal
     remark: str
@@ -534,6 +540,20 @@ class PurchaseOrderRejection(BaseModel):
     @classmethod
     def strip_reason(cls, value: str) -> str:
         return value.strip()
+
+
+class OrderRevisionResponse(BaseModel):
+    id: int
+    order_type: str
+    order_number: str
+    revision_number: int
+    reason: str
+    changed_by_name: str
+    before_snapshot: dict[str, object]
+    after_snapshot: dict[str, object]
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class QuotationItemInput(BaseModel):
@@ -813,7 +833,12 @@ class SalesOrderCreate(SalesOrderBase):
 
 
 class SalesOrderUpdate(SalesOrderBase):
-    pass
+    revision_reason: str | None = Field(default=None, min_length=3, max_length=2000)
+
+    @field_validator("revision_reason")
+    @classmethod
+    def strip_revision_reason(cls, value: str | None) -> str | None:
+        return value.strip() if value else value
 
 
 class SalesOrderItemResponse(BaseModel):
@@ -829,6 +854,7 @@ class SalesOrderItemResponse(BaseModel):
     outstanding_material_quantity: Decimal
     delivered_quantity: Decimal
     outstanding_order_quantity: Decimal
+    excess_delivery_quantity: Decimal = Decimal("0")
     outstanding_note: str
     unit_price: Decimal
     amount: Decimal

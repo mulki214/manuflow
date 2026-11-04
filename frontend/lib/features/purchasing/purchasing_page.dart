@@ -945,6 +945,7 @@ class _PurchasingPageState extends State<PurchasingPage> {
                       DataColumn(label: Text('UNIT PRICE')),
                       DataColumn(label: Text('AMOUNT')),
                       DataColumn(label: Text('RECEIVED')),
+                      DataColumn(label: Text('SUBCONTRACT IN TRANSIT')),
                       DataColumn(label: Text('OUTSTANDING')),
                       DataColumn(label: Text('EXCESS')),
                       DataColumn(label: Text('REMARK')),
@@ -976,6 +977,13 @@ class _PurchasingPageState extends State<PurchasingPage> {
                               ),
                               DataCell(
                                 Text(_formatNumber(entry.$2.receivedQuantity)),
+                              ),
+                              DataCell(
+                                Text(
+                                  entry.$2.inTransitQuantity > 0
+                                      ? '${_formatNumber(entry.$2.inTransitQuantity)} ${unitLabel(entry.$2.unit)}'
+                                      : '-',
+                                ),
                               ),
                               DataCell(
                                 Text(
@@ -1047,6 +1055,10 @@ class _PurchasingPageState extends State<PurchasingPage> {
                   ],
                 ),
                 if (order.notes.isNotEmpty) _detail('Note', order.notes),
+                const SizedBox(height: 18),
+                _revisionHistory(
+                  '/purchasing/${Uri.encodeComponent(order.poNumber)}/revisions',
+                ),
                 if (order.rejectionReason != null)
                   _detail('Rejection Reason', order.rejectionReason!),
               ],
@@ -1081,6 +1093,70 @@ class _PurchasingPageState extends State<PurchasingPage> {
       ),
     );
   }
+
+  Widget _revisionHistory(String path) => FutureBuilder<dynamic>(
+    future: widget.auth.api.getJson(path),
+    builder: (context, snapshot) {
+      final revisions = snapshot.data is List
+          ? List<Map<String, dynamic>>.from(snapshot.data as List)
+          : const <Map<String, dynamic>>[];
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Revision History',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          if (snapshot.connectionState == ConnectionState.waiting)
+            const LinearProgressIndicator()
+          else if (snapshot.hasError)
+            const Text('Unable to load revision history.')
+          else if (revisions.isEmpty)
+            const Text('No revisions recorded.')
+          else
+            ...revisions.map((revision) {
+              final before = revision['before_snapshot'] as Map? ?? const {};
+              final after = revision['after_snapshot'] as Map? ?? const {};
+              String quantities(Map snapshot) {
+                final items = snapshot['items'] as List? ?? const [];
+                if (items.isEmpty) return '-';
+                return items
+                    .map((raw) {
+                      final item = raw as Map;
+                      return '${item['part_name'] ?? item['product_code']}: ${item['quantity'] ?? '-'} ${item['unit'] ?? ''}';
+                    })
+                    .join(' • ');
+              }
+
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Revision ${revision['revision_number']} • ${revision['changed_by_name'] ?? '-'}',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 4),
+                      Text('Reason: ${revision['reason'] ?? '-'}'),
+                      Text(
+                        'Status: ${before['fulfillment_status'] ?? '-'} → ${after['fulfillment_status'] ?? '-'}',
+                      ),
+                      Text('Before: ${quantities(before)}'),
+                      Text('After: ${quantities(after)}'),
+                      Text('Recorded: ${revision['created_at'] ?? '-'}'),
+                    ],
+                  ),
+                ),
+              );
+            }),
+        ],
+      );
+    },
+  );
 
   Widget _detail(String label, String value) => SizedBox(
     width: 250,
