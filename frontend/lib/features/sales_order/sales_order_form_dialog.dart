@@ -24,6 +24,7 @@ class _SalesOrderFormDialogState extends State<SalesOrderFormDialog> {
   final _shipToContact = TextEditingController();
   final _shipToPhone = TextEditingController();
   final _notes = TextEditingController();
+  final _revisionReason = TextEditingController();
   final List<_SalesItemDraft> _items = [];
 
   List<Map<String, dynamic>> _customers = [];
@@ -67,6 +68,7 @@ class _SalesOrderFormDialogState extends State<SalesOrderFormDialog> {
       _shipToContact,
       _shipToPhone,
       _notes,
+      _revisionReason,
     ]) {
       controller.dispose();
     }
@@ -172,6 +174,8 @@ class _SalesOrderFormDialogState extends State<SalesOrderFormDialog> {
       'delivery_date': _date(_deliveryDate),
       'order_type': _orderType,
       'notes': _notes.text.trim(),
+      if (widget.order?.status == 'approved')
+        'revision_reason': _revisionReason.text.trim(),
       'items': _items
           .map(
             (item) => {
@@ -219,6 +223,58 @@ class _SalesOrderFormDialogState extends State<SalesOrderFormDialog> {
     return null;
   }
 
+  Widget _revisionNotice() => Container(
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: const Color(0xFFFFFAEB),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: const Color(0xFFFEC84B)),
+    ),
+    child: const Text(
+      'Delivered quantities and received materials remain in their history and stock. Lowering the ordered quantity can close the SO with excess delivery; increasing it can reopen the SO.',
+    ),
+  );
+
+  Widget _revisionQuantityPreview(_SalesItemDraft item) {
+    final requested = double.tryParse(item.quantity.text) ?? 0;
+    final outstanding = (requested - item.deliveredQuantity)
+        .clamp(0, double.infinity)
+        .toDouble();
+    final excess = (item.deliveredQuantity - requested)
+        .clamp(0, double.infinity)
+        .toDouble();
+    final inTransit = (item.dispatchedQuantity - item.deliveredQuantity)
+        .clamp(0, double.infinity)
+        .toDouble();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Wrap(
+        spacing: 20,
+        runSpacing: 8,
+        children: [
+          Text('Delivered: ${_quantity(item.deliveredQuantity, item.unit)}'),
+          Text('Still due: ${_quantity(outstanding, item.unit)}'),
+          Text('Excess delivery: ${_quantity(excess, item.unit)}'),
+          if (inTransit > 0)
+            Text('In transit: ${_quantity(inTransit, item.unit)}'),
+          if (requested < item.deliveredQuantity + inTransit)
+            const Text(
+              'Quantity cannot be lower than delivered plus in transit.',
+              style: TextStyle(color: Color(0xFFB42318)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  String _quantity(double value, String unit) =>
+      '${formatQuantity(value, unit)} ${unitLabel(unit)}';
+
   @override
   Widget build(BuildContext context) {
     return Dialog(
@@ -235,6 +291,8 @@ class _SalesOrderFormDialogState extends State<SalesOrderFormDialog> {
                     child: Text(
                       widget.order == null
                           ? 'Create Sales Order'
+                          : widget.order!.status == 'approved'
+                          ? 'Revise ${widget.order!.salesOrderNumber}'
                           : 'Edit ${widget.order!.salesOrderNumber}',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w700,
@@ -268,7 +326,11 @@ class _SalesOrderFormDialogState extends State<SalesOrderFormDialog> {
                   FilledButton.icon(
                     onPressed: _saving ? null : _submit,
                     icon: const Icon(Icons.save_outlined),
-                    label: const Text('Save as Waiting Review'),
+                    label: Text(
+                      widget.order?.status == 'approved'
+                          ? 'Save Revision'
+                          : 'Save as Waiting Review',
+                    ),
                   ),
                 ],
               ),
@@ -297,6 +359,23 @@ class _SalesOrderFormDialogState extends State<SalesOrderFormDialog> {
               ],
             ),
             const SizedBox(height: 16),
+          ],
+          if (widget.order?.status == 'approved') ...[
+            _revisionNotice(),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _revisionReason,
+              minLines: 2,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: 'Revision Reason *',
+                helperText: 'Recorded in the order revision history.',
+              ),
+              validator: (value) => value == null || value.trim().length < 3
+                  ? 'Enter a reason (at least 3 characters).'
+                  : null,
+            ),
+            const SizedBox(height: 20),
           ],
           Text(
             'Sales Order Header',
@@ -541,6 +620,7 @@ class _SalesOrderFormDialogState extends State<SalesOrderFormDialog> {
                     decimal: !isDiscreteUnit(item.unit),
                   ),
                   decoration: const InputDecoration(labelText: 'Quantity'),
+                  onChanged: (_) => setState(() {}),
                   validator: (value) =>
                       quantityValidationError(value, item.unit),
                 ),
@@ -594,6 +674,10 @@ class _SalesOrderFormDialogState extends State<SalesOrderFormDialog> {
               ),
             ],
           ),
+          if (widget.order?.status == 'approved') ...[
+            const SizedBox(height: 12),
+            _revisionQuantityPreview(item),
+          ],
         ],
       ),
     ),
@@ -609,6 +693,8 @@ class _SalesItemDraft {
     String remark = '',
     String outstandingNote = '',
     this.unit = 'pcs',
+    this.deliveredQuantity = 0,
+    this.dispatchedQuantity = 0,
   }) : quantity = TextEditingController(text: quantity),
        price = TextEditingController(text: price),
        remark = TextEditingController(text: remark),
@@ -623,11 +709,15 @@ class _SalesItemDraft {
         remark: item.remark,
         outstandingNote: item.outstandingNote,
         unit: item.unit,
+        deliveredQuantity: item.deliveredQuantity,
+        dispatchedQuantity: item.dispatchedQuantity,
       );
 
   String? productCode;
   final int? id;
   String unit;
+  final double deliveredQuantity;
+  final double dispatchedQuantity;
   final TextEditingController quantity;
   final TextEditingController price;
   final TextEditingController remark;
