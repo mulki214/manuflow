@@ -49,6 +49,11 @@ class PurchaseOrderKind(str, enum.Enum):
     subcontract = "subcontract"
 
 
+class PurchaseOrderPurpose(str, enum.Enum):
+    sales_order = "sales_order"
+    internal_stock = "internal_stock"
+
+
 class PurchaseRequestStatus(str, enum.Enum):
     waiting_review = "waiting_review"
     approved = "approved"
@@ -427,8 +432,7 @@ class PurchaseOrder(Base):
     __tablename__ = "purchase_orders"
 
     po_number: Mapped[str] = mapped_column(String(20), primary_key=True)
-    # Nullable only to preserve historical POs. All newly created POs are
-    # required by the API to reference an approved Sales Order.
+    # Customer-linked POs reference an SO; internal stock POs leave it empty.
     sales_order_number: Mapped[str | None] = mapped_column(
         ForeignKey("sales_orders.sales_order_number", ondelete="RESTRICT"), nullable=True, index=True
     )
