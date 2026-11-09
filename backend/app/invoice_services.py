@@ -56,17 +56,14 @@ def _integer_words(value: int) -> str:
 
 
 def invoice_amount_in_words(amount: Decimal, currency: str = "IDR") -> str:
-    """Spell the amount in English; append fractional cents only when non-zero."""
+    """Spell only the whole-unit portion of a non-negative invoice amount in English."""
     rounded = amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     if rounded < 0:
         raise ValueError("Invoice amount cannot be negative")
     whole = int(rounded)
-    fraction = int((rounded - whole) * 100)
     currency_names = {"IDR": "rupiah", "USD": "US dollars", "EUR": "euros", "GBP": "pounds"}
     currency_name = currency_names.get(currency.upper(), currency.upper())
     words = f"{_integer_words(whole)} {currency_name}"
-    if fraction:
-        words += f" and {fraction:02d}/100"
     result = f"{words} only"
     return result[0].upper() + result[1:]
 
