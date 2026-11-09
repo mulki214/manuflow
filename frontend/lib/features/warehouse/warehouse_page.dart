@@ -671,8 +671,8 @@ class _WarehousePageState extends State<WarehousePage> {
                 title: Text('$number • ${dispatch['subcontractor_name']}'),
                 subtitle: Text(
                   '${dispatch['po_number']} • SO ${dispatch['sales_order_number'] ?? '-'} • ${dispatch['dispatched_at']}\n'
-                  '${dispatch['source_product_name']} (${dispatch['source_product_code']}) • Lot ${dispatch['lot_number']} • ${dispatch['quantity']} ${dispatch['unit']}\n'
-                  '${dispatch['source_process_name']} → ${dispatch['process_to_name']} • Expected ${dispatch['expected_output_quantity']} ${dispatch['expected_output_unit']} • ${dispatch['status']}',
+                  '${dispatch['source_product_name']} (${dispatch['source_product_code']}) • Lot ${dispatch['lot_number']} • ${formatQuantity(dispatch['quantity'], dispatch['unit'].toString())} ${unitLabel(dispatch['unit'].toString())}\n'
+                  '${dispatch['source_process_name']} → ${dispatch['process_to_name']} • Expected ${formatQuantity(dispatch['expected_output_quantity'], dispatch['expected_output_unit'].toString())} ${unitLabel(dispatch['expected_output_unit'].toString())} • ${dispatch['status']}',
                 ),
                 isThreeLine: true,
                 trailing: IconButton(
