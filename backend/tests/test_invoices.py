@@ -42,9 +42,10 @@ def test_invoice_amount_is_spelled_in_english() -> None:
     whole_amount = invoice_amount_in_words(Decimal("222.00"))
     assert whole_amount == "Two hundred twenty-two rupiah only"
     assert "00/100" not in whole_amount
-    assert invoice_amount_in_words(Decimal("1234.56"), "USD") == (
-        "One thousand two hundred thirty-four US dollars and 56/100 only"
+    assert invoice_amount_in_words(Decimal("30517063.50")) == (
+        "Thirty million five hundred seventeen thousand sixty-three rupiah only"
     )
+    assert invoice_amount_in_words(Decimal("1234.56"), "USD") == "One thousand two hundred thirty-four US dollars only"
 
 
 def test_invoice_number_and_middleware_path_matching() -> None:
