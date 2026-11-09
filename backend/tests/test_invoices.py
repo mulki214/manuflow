@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from app.document_services import invoice_pdf_bytes
 from app.invoice_services import (
     format_invoice_number,
+    invoice_amount_in_words,
     invoice_line_amount,
     invoice_quantity_available,
     invoice_totals,
@@ -35,6 +36,13 @@ def test_invoice_discount_cannot_exceed_subtotal() -> None:
 def test_invoice_available_quantity_never_goes_negative() -> None:
     assert invoice_quantity_available(Decimal("10"), Decimal("4")) == Decimal("6")
     assert invoice_quantity_available(Decimal("10"), Decimal("12")) == Decimal("0")
+
+
+def test_invoice_amount_is_spelled_in_english() -> None:
+    assert invoice_amount_in_words(Decimal("222.00")) == "Two hundred twenty-two rupiah only"
+    assert invoice_amount_in_words(Decimal("1234.56"), "USD") == (
+        "One thousand two hundred thirty-four US dollars and 56/100 only"
+    )
 
 
 def test_invoice_number_and_middleware_path_matching() -> None:
@@ -107,6 +115,6 @@ def test_invoice_pdf_uses_shared_pdf_document_layout() -> None:
         created_by_name="Sales User",
         created_at=datetime(2026, 11, 2, 10, 30),
     )
-    pdf = invoice_pdf_bytes(invoice)
+    pdf = invoice_pdf_bytes(invoice, customer_po_number="CPO-2026-001")
     assert pdf.startswith(b"%PDF")
     assert len(pdf) > 1000
