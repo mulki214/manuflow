@@ -497,7 +497,8 @@ async def download_invoice_pdf(
 ) -> Response:
     await current_access(db, current_user)
     invoice = invoice_response(await get_invoice(db, invoice_number))
-    content = invoice_pdf_bytes(invoice)
+    sales_order = await db.get(SalesOrder, invoice.sales_order_number)
+    content = invoice_pdf_bytes(invoice, customer_po_number=sales_order.customer_po_number if sales_order else None)
     safe_number = invoice.invoice_number.replace("/", "-")
     return Response(
         content=content,

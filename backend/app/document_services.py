@@ -401,15 +401,16 @@ def quotation_pdf_bytes(quotation: Any) -> bytes:
     return stream.getvalue()
 
 
-def invoice_pdf_bytes(invoice: Any) -> bytes:
+def invoice_pdf_bytes(invoice: Any, *, customer_po_number: str | None = None) -> bytes:
     """Render a tax invoice using the existing PO/quotation document theme."""
-    import qrcode
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_CENTER, TA_RIGHT
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
-    from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table
+
+    from app.invoice_services import invoice_amount_in_words
 
     stream = BytesIO()
     document = SimpleDocTemplate(
@@ -447,8 +448,9 @@ def invoice_pdf_bytes(invoice: Any) -> bytes:
                         invoice.due_date.strftime("%d/%m/%Y") if invoice.due_date else "-",
                     ],
                     ["Contact", invoice.customer_contact_person or "-", "Phone", invoice.customer_phone or "-"],
-                    ["Sales Order", invoice.sales_order_number, "Status", status.title()],
-                    ["Payment Terms", invoice.payment_terms or "-", "Currency", invoice.currency],
+                    ["Customer PO", customer_po_number or "-", "Status", status.title()],
+                    ["Sales Order", invoice.sales_order_number, "Currency", invoice.currency],
+                    ["Payment Terms", invoice.payment_terms or "-", "", ""],
                 ],
                 [25 * mm, 70 * mm, 27 * mm, 53 * mm],
                 cell,
@@ -509,6 +511,15 @@ def invoice_pdf_bytes(invoice: Any) -> bytes:
             ),
         ]
     )
+    story.extend(
+        [
+            Spacer(1, 2 * mm),
+            Paragraph(
+                f"<b>Amount in Words:</b> {escape(invoice_amount_in_words(invoice.grand_total, invoice.currency))}",
+                cell,
+            ),
+        ]
+    )
     if invoice.payment_terms:
         story.extend(
             [
@@ -526,26 +537,14 @@ def invoice_pdf_bytes(invoice: Any) -> bytes:
                 Paragraph(f"<b>Void Reason:</b> {escape(str(invoice.void_reason))}", cell),
             ]
         )
-    creator_payload = signed_document_payload(
-        "invoice",
-        invoice.invoice_number,
-        "created",
-        invoice.created_by,
-        invoice.created_by_name,
-        invoice.created_at,
-    )
-    qr_stream = BytesIO()
-    qrcode.make(creator_payload).save(qr_stream, format="PNG")
-    qr_stream.seek(0)
-    creator_qr = Image(qr_stream, width=25 * mm, height=25 * mm)
     story.extend(
         [
             Spacer(1, 12 * mm),
             Table(
                 [
-                    [Paragraph("<b>Customer</b>", center), Paragraph("<b>Created By</b>", center)],
-                    [Spacer(1, 27 * mm), creator_qr],
-                    [Paragraph("Customer Signature", center), _pdf_text(invoice.created_by_name, center)],
+                    [Paragraph("<b>Customer</b>", center), Paragraph("<b>Authorized Signature</b>", center)],
+                    [Spacer(1, 27 * mm), Spacer(1, 27 * mm)],
+                    [Paragraph("Customer Signature", center), Paragraph("Authorized Signature", center)],
                 ],
                 colWidths=[78 * mm, 78 * mm],
                 hAlign="CENTER",
