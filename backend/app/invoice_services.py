@@ -56,7 +56,7 @@ def _integer_words(value: int) -> str:
 
 
 def invoice_amount_in_words(amount: Decimal, currency: str = "IDR") -> str:
-    """Spell a non-negative invoice total in English, retaining fractional cents."""
+    """Spell the amount in English; append fractional cents only when non-zero."""
     rounded = amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     if rounded < 0:
         raise ValueError("Invoice amount cannot be negative")

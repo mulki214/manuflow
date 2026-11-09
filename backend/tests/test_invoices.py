@@ -39,7 +39,9 @@ def test_invoice_available_quantity_never_goes_negative() -> None:
 
 
 def test_invoice_amount_is_spelled_in_english() -> None:
-    assert invoice_amount_in_words(Decimal("222.00")) == "Two hundred twenty-two rupiah only"
+    whole_amount = invoice_amount_in_words(Decimal("222.00"))
+    assert whole_amount == "Two hundred twenty-two rupiah only"
+    assert "00/100" not in whole_amount
     assert invoice_amount_in_words(Decimal("1234.56"), "USD") == (
         "One thousand two hundred thirty-four US dollars and 56/100 only"
     )
