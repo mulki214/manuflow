@@ -64,8 +64,7 @@ def invoice_amount_in_words(amount: Decimal, currency: str = "IDR") -> str:
     currency_names = {"IDR": "rupiah", "USD": "US dollars", "EUR": "euros", "GBP": "pounds"}
     currency_name = currency_names.get(currency.upper(), currency.upper())
     words = f"{_integer_words(whole)} {currency_name}"
-    result = f"{words} only"
-    return result[0].upper() + result[1:]
+    return words.upper()
 
 
 def invoice_line_amount(quantity: Decimal, unit_price: Decimal) -> Decimal:
