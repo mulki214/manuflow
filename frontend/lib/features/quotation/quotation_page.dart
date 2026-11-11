@@ -381,6 +381,7 @@ class _QuotationPageState extends State<QuotationPage> {
     StateSetter setState,
     List<_QuoteLine> lines,
   ) => Card(
+    key: ObjectKey(line),
     child: Padding(
       padding: const EdgeInsets.all(10),
       child: Column(

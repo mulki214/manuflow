@@ -71,6 +71,22 @@ class SearchableSelectField<T> extends FormField<T> {
            );
          },
        );
+
+  @override
+  FormFieldState<T> createState() => _SearchableSelectFieldState<T>();
+}
+
+class _SearchableSelectFieldState<T> extends FormFieldState<T> {
+  @override
+  void didUpdateWidget(covariant SearchableSelectField<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialValue != oldWidget.initialValue &&
+        value != widget.initialValue) {
+      // Keep the FormField's internal selection aligned when its owner resets
+      // or changes the value (for example, after changing SO/customer).
+      setValue(widget.initialValue);
+    }
+  }
 }
 
 class SearchableSelectOption<T> {

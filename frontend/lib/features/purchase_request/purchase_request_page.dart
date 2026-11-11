@@ -392,6 +392,7 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                   const SizedBox(height: 8),
                   for (var index = 0; index < lines.length; index++) ...[
                     _PurchaseRequestLineFields(
+                      key: ObjectKey(lines[index]),
                       index: index,
                       line: lines[index],
                       candidates: _candidatesForSalesOrder(
@@ -1004,6 +1005,7 @@ class _PurchaseRequestLine {
 
 class _PurchaseRequestLineFields extends StatelessWidget {
   const _PurchaseRequestLineFields({
+    super.key,
     required this.index,
     required this.line,
     required this.candidates,
