@@ -7,6 +7,7 @@ from app.models import (
     AccessLevel,
     FulfillmentStatus,
     Gender,
+    InterPlantWipTransferStatus,
     InventoryMovementType,
     InvoiceStatus,
     ProductCategory,
@@ -1322,6 +1323,52 @@ class ProductionWipJobResponse(BaseModel):
 
 class PaginatedProductionWipJobs(BaseModel):
     items: list[ProductionWipJobResponse]
+    total: int
+    page: int
+    size: int
+
+
+class InterPlantWipTransferCreate(BaseModel):
+    transfer_date: date
+    destination_process_code: str = Field(min_length=1, max_length=20)
+    quantity: Decimal = Field(gt=0, decimal_places=3)
+    notes: str = Field(default="", max_length=5000)
+
+
+class InterPlantWipTransferResponse(BaseModel):
+    id: int
+    transfer_number: str
+    transfer_date: date
+    source_job_id: int
+    received_job_id: int | None
+    product_code: str
+    product_name: str
+    description: str
+    lot_number: str
+    lot_segment_code: str
+    unit: str
+    quantity: Decimal
+    source_plant_code: str
+    source_plant_name: str
+    source_process_code: str
+    source_process_name: str
+    destination_plant_code: str
+    destination_plant_name: str
+    destination_process_code: str
+    destination_process_name: str
+    status: InterPlantWipTransferStatus
+    notes: str
+    dispatched_by: str
+    dispatched_by_name: str
+    dispatched_at: datetime
+    received_by: str | None
+    received_by_name: str | None
+    received_at: datetime | None
+    can_receive: bool
+
+
+class PaginatedInterPlantWipTransfers(BaseModel):
+    items: list[InterPlantWipTransferResponse]
     total: int
     page: int
     size: int

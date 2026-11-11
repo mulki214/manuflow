@@ -93,3 +93,32 @@ def ensure_production_execution_reversible(
 
 def child_segment_code(parent_segment: str, execution_id: int, outcome: str) -> str:
     return f"{parent_segment[:32]}-{execution_id}{outcome}"[:40]
+
+
+def validate_interplant_destination(
+    source_plant_code: str,
+    source_process_code: str,
+    source_process_type: str,
+    destination_plant_code: str,
+    destination_process_code: str,
+    destination_process_type: str,
+    destination_process_active: bool,
+    has_product_process_standard: bool,
+) -> None:
+    """Ensure a WIP move advances to an enabled OP configured for this product."""
+    if source_process_type != "production":
+        raise ValueError("Only production WIP can be transferred between plants")
+    if not destination_process_active or destination_process_type != "production":
+        raise ValueError("Destination must be an active Production Process")
+    if destination_plant_code == source_plant_code:
+        raise ValueError("Destination Process must belong to another Plant")
+    if destination_process_code == source_process_code:
+        raise ValueError("Destination Process must differ from the current Process")
+    if not has_product_process_standard:
+        raise ValueError("Destination Process is not configured for this Product")
+
+
+def interplant_job_segment_code(source_segment: str, transfer_id: int) -> str:
+    """Generate a stable, unique segment identifier for the received WIP child."""
+    suffix = f"-IP{transfer_id}"
+    return f"{source_segment[: 40 - len(suffix)]}{suffix}"

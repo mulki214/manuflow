@@ -106,6 +106,93 @@ class ProductionWipJobModel {
   final int? repairStepOrder;
 }
 
+class InterPlantWipTransferModel {
+  const InterPlantWipTransferModel({
+    required this.id,
+    required this.number,
+    required this.date,
+    required this.productCode,
+    required this.productName,
+    required this.description,
+    required this.lotNumber,
+    required this.segmentCode,
+    required this.unit,
+    required this.quantity,
+    required this.sourcePlantCode,
+    required this.sourcePlantName,
+    required this.sourceProcessCode,
+    required this.sourceProcessName,
+    required this.destinationPlantCode,
+    required this.destinationPlantName,
+    required this.destinationProcessCode,
+    required this.destinationProcessName,
+    required this.status,
+    required this.notes,
+    required this.dispatchedByName,
+    required this.dispatchedAt,
+    required this.receivedByName,
+    required this.receivedAt,
+    required this.canReceive,
+  });
+
+  factory InterPlantWipTransferModel.fromJson(Map<String, dynamic> json) =>
+      InterPlantWipTransferModel(
+        id: json['id'] as int,
+        number: json['transfer_number'].toString(),
+        date: DateTime.parse(json['transfer_date'].toString()),
+        productCode: json['product_code'].toString(),
+        productName: json['product_name'].toString(),
+        description: json['description'].toString(),
+        lotNumber: json['lot_number'].toString(),
+        segmentCode: json['lot_segment_code'].toString(),
+        unit: json['unit'].toString(),
+        quantity: productionNumber(json['quantity']),
+        sourcePlantCode: json['source_plant_code'].toString(),
+        sourcePlantName: json['source_plant_name'].toString(),
+        sourceProcessCode: json['source_process_code'].toString(),
+        sourceProcessName: json['source_process_name'].toString(),
+        destinationPlantCode: json['destination_plant_code'].toString(),
+        destinationPlantName: json['destination_plant_name'].toString(),
+        destinationProcessCode: json['destination_process_code'].toString(),
+        destinationProcessName: json['destination_process_name'].toString(),
+        status: json['status'].toString(),
+        notes: json['notes'].toString(),
+        dispatchedByName: json['dispatched_by_name'].toString(),
+        dispatchedAt: DateTime.parse(json['dispatched_at'].toString()),
+        receivedByName: json['received_by_name']?.toString(),
+        receivedAt: json['received_at'] == null
+            ? null
+            : DateTime.parse(json['received_at'].toString()),
+        canReceive: json['can_receive'] == true,
+      );
+
+  final int id;
+  final String number;
+  final DateTime date;
+  final String productCode;
+  final String productName;
+  final String description;
+  final String lotNumber;
+  final String segmentCode;
+  final String unit;
+  final double quantity;
+  final String sourcePlantCode;
+  final String sourcePlantName;
+  final String sourceProcessCode;
+  final String sourceProcessName;
+  final String destinationPlantCode;
+  final String destinationPlantName;
+  final String destinationProcessCode;
+  final String destinationProcessName;
+  final String status;
+  final String notes;
+  final String dispatchedByName;
+  final DateTime dispatchedAt;
+  final String? receivedByName;
+  final DateTime? receivedAt;
+  final bool canReceive;
+}
+
 class ProductionExecutionModel {
   const ProductionExecutionModel({
     required this.id,

@@ -18,10 +18,11 @@ import '../users/change_password_dialog.dart';
 import '../warehouse/warehouse_page.dart';
 import 'production_models.dart';
 import 'consumable_disposition_dialog.dart';
+import 'inter_plant_wip_transfer_dialog.dart';
 import 'production_page.dart';
 import 'wip_execution_form_dialog.dart';
 
-enum _WipView { queue, history }
+enum _WipView { queue, transfers, history }
 
 class WipProductionPage extends StatefulWidget {
   const WipProductionPage({super.key, required this.auth});
@@ -36,6 +37,7 @@ class _WipProductionPageState extends State<WipProductionPage> {
   final _search = TextEditingController();
   _WipView _view = _WipView.queue;
   List<ProductionWipJobModel> _jobs = [];
+  List<InterPlantWipTransferModel> _transfers = [];
   List<ProductionExecutionModel> _executions = [];
   List<Map<String, dynamic>> _plants = [];
   List<ProductionProcessModel> _processes = [];
@@ -97,7 +99,8 @@ class _WipProductionPageState extends State<WipProductionPage> {
         'size=$_size',
         if (term.isNotEmpty) 'search=${Uri.encodeQueryComponent(term)}',
         if (_plantCode != null) 'plant_code=$_plantCode',
-        if (_processCode != null) 'process_code=$_processCode',
+        if (_view != _WipView.transfers && _processCode != null)
+          'process_code=$_processCode',
         if (_view == _WipView.queue) 'active_only=true',
         if (_view == _WipView.history && _from != null)
           'date_from=${_apiDate(_from!)}',
@@ -107,6 +110,8 @@ class _WipProductionPageState extends State<WipProductionPage> {
       final response = await widget.auth.api.getJson(
         _view == _WipView.queue
             ? '/production/wip-jobs?$query'
+            : _view == _WipView.transfers
+            ? '/production/inter-plant-transfers?$query'
             : '/production/executions?$query',
       );
       if (!mounted) return;
@@ -115,6 +120,14 @@ class _WipProductionPageState extends State<WipProductionPage> {
           _jobs = (response['items'] as List)
               .map(
                 (item) => ProductionWipJobModel.fromJson(
+                  item as Map<String, dynamic>,
+                ),
+              )
+              .toList();
+        } else if (_view == _WipView.transfers) {
+          _transfers = (response['items'] as List)
+              .map(
+                (item) => InterPlantWipTransferModel.fromJson(
                   item as Map<String, dynamic>,
                 ),
               )
@@ -153,6 +166,69 @@ class _WipProductionPageState extends State<WipProductionPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('WIP Production result recorded.')),
         );
+      }
+    }
+  }
+
+  Future<void> _dispatchToPlant(ProductionWipJobModel job) async {
+    final changed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) =>
+          InterPlantWipTransferDialog(api: widget.auth.api, job: job),
+    );
+    if (changed == true) {
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('WIP dispatched to another plant.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _receiveInterPlant(InterPlantWipTransferModel transfer) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Receive Inter-Plant WIP?'),
+        content: Text(
+          '${transfer.number}\n${transfer.productName} • Lot ${transfer.lotNumber}\n'
+          '${_number(transfer.quantity)} ${unitLabel(transfer.unit)} → '
+          '${transfer.destinationPlantCode} — ${transfer.destinationProcessCode}\n\n'
+          'Confirm that the full dispatched quantity has arrived. This action cannot be repeated.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Confirm Receipt'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.auth.api.postJson(
+        '/production/inter-plant-transfers/${transfer.id}/receive',
+        const {},
+      );
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('WIP received into the destination OP.'),
+          ),
+        );
+      }
+    } on ApiException catch (exception) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(exception.message)));
       }
     }
   }
@@ -518,6 +594,11 @@ class _WipProductionPageState extends State<WipProductionPage> {
                   label: Text('WIP Queue'),
                 ),
                 ButtonSegment(
+                  value: _WipView.transfers,
+                  icon: Icon(Icons.swap_horiz),
+                  label: Text('Plant Transfers'),
+                ),
+                ButtonSegment(
                   value: _WipView.history,
                   icon: Icon(Icons.history),
                   label: Text('Process History'),
@@ -535,6 +616,11 @@ class _WipProductionPageState extends State<WipProductionPage> {
                     value: _WipView.queue,
                     icon: Icon(Icons.hourglass_top_outlined),
                     label: Text('WIP Queue'),
+                  ),
+                  ButtonSegment(
+                    value: _WipView.transfers,
+                    icon: Icon(Icons.swap_horiz),
+                    label: Text('Plant Transfers'),
                   ),
                   ButtonSegment(
                     value: _WipView.history,
@@ -589,25 +675,26 @@ class _WipProductionPageState extends State<WipProductionPage> {
                       _load();
                     },
                   ),
-                  _filterDropdown(
-                    'Process',
-                    _processCode,
-                    _processes
-                        .map(
-                          (item) => MapEntry(
-                            item.code,
-                            '${item.code} — ${item.name}',
-                          ),
-                        )
-                        .toList(),
-                    (value) {
-                      setState(() {
-                        _processCode = value;
-                        _page = 1;
-                      });
-                      _load();
-                    },
-                  ),
+                  if (_view != _WipView.transfers)
+                    _filterDropdown(
+                      'Process',
+                      _processCode,
+                      _processes
+                          .map(
+                            (item) => MapEntry(
+                              item.code,
+                              '${item.code} — ${item.name}',
+                            ),
+                          )
+                          .toList(),
+                      (value) {
+                        setState(() {
+                          _processCode = value;
+                          _page = 1;
+                        });
+                        _load();
+                      },
+                    ),
                   if (_view == _WipView.history)
                     OutlinedButton.icon(
                       onPressed: _pickRange,
@@ -665,7 +752,11 @@ class _WipProductionPageState extends State<WipProductionPage> {
       ),
       const SizedBox(height: 4),
       Text(
-        '$_total ${_view == _WipView.queue ? 'active WIP jobs' : 'production executions'}',
+        '$_total ${switch (_view) {
+          _WipView.queue => 'active WIP jobs',
+          _WipView.transfers => 'inter-plant WIP transfers',
+          _WipView.history => 'production executions',
+        }}',
         style: const TextStyle(color: Color(0xFF667085)),
       ),
     ],
@@ -697,6 +788,7 @@ class _WipProductionPageState extends State<WipProductionPage> {
       _view = value.first;
       _page = 1;
       _search.clear();
+      _processCode = null;
     });
     _load();
   }
@@ -737,166 +829,330 @@ class _WipProductionPageState extends State<WipProductionPage> {
         ),
       );
     }
+    if (_view == _WipView.transfers && _transfers.isEmpty) {
+      return const Center(child: Text('No Inter-Plant WIP Transfers found.'));
+    }
     if (_view == _WipView.history && _executions.isEmpty) {
       return const Center(child: Text('No Production Executions found.'));
     }
     return desktop ? _table() : _cards();
   }
 
-  Widget _table() => Card(
+  Widget _table() {
+    if (_view == _WipView.transfers) return _transferTable();
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: ScrollableDataTable(
+        child: _view == _WipView.queue
+            ? DataTable(
+                columns: const [
+                  DataColumn(label: Text('LOT / SEGMENT')),
+                  DataColumn(label: Text('PRODUCT / DESCRIPTION')),
+                  DataColumn(label: Text('QTY / UNIT')),
+                  DataColumn(label: Text('PLANT')),
+                  DataColumn(label: Text('CURRENT PROCESS')),
+                  DataColumn(label: Text('SOURCE')),
+                  DataColumn(label: Text('STATUS')),
+                  DataColumn(label: Text('ACTION')),
+                ],
+                rows: _jobs
+                    .map(
+                      (job) => DataRow(
+                        cells: [
+                          DataCell(
+                            Text('${job.lotNumber}\n${job.segmentCode}'),
+                          ),
+                          DataCell(
+                            SizedBox(
+                              width: 230,
+                              child: Text(
+                                '${job.productCode} — ${job.description}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            Text(
+                              '${_number(job.currentQuantity)} ${unitLabel(job.unit)}',
+                            ),
+                          ),
+                          DataCell(Text(job.plantName)),
+                          DataCell(
+                            Text('${job.processCode} — ${job.processName}'),
+                          ),
+                          DataCell(Text(job.sourceTransferNumber)),
+                          DataCell(_jobStatus(job.status)),
+                          DataCell(
+                            Wrap(
+                              spacing: 6,
+                              children: [
+                                FilledButton(
+                                  onPressed: job.canComplete
+                                      ? () => _complete(job)
+                                      : null,
+                                  child: const Text('Process'),
+                                ),
+                                if (job.canComplete &&
+                                    job.processType == 'production')
+                                  OutlinedButton.icon(
+                                    onPressed: () => _dispatchToPlant(job),
+                                    icon: const Icon(Icons.swap_horiz),
+                                    label: const Text('Transfer Plant'),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                    .toList(),
+              )
+            : DataTable(
+                columns: const [
+                  DataColumn(label: Text('DATE')),
+                  DataColumn(label: Text('NUMBER')),
+                  DataColumn(label: Text('SHIFT')),
+                  DataColumn(label: Text('DESCRIPTION / LOT')),
+                  DataColumn(label: Text('QTY / UNIT')),
+                  DataColumn(label: Text('PLANT')),
+                  DataColumn(label: Text('BEFORE')),
+                  DataColumn(label: Text('AFTER')),
+                  DataColumn(label: Text('MACHINE')),
+                  DataColumn(label: Text('GOOD / REPAIR / NG')),
+                  DataColumn(label: Text('ACTION')),
+                ],
+                rows: _executions
+                    .map(
+                      (item) => DataRow(
+                        onSelectChanged: (_) => _executionDetail(item),
+                        cells: [
+                          DataCell(Text(_date(item.date))),
+                          DataCell(
+                            Text(
+                              item.number,
+                              style: const TextStyle(
+                                fontFamily: 'monospace',
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          DataCell(Text(item.shift)),
+                          DataCell(
+                            SizedBox(
+                              width: 220,
+                              child: Text(
+                                '${item.description}\nLot ${item.lotNumber}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            Text(
+                              '${_number(item.processingQuantity)} ${unitLabel(item.unit)}',
+                            ),
+                          ),
+                          DataCell(Text(item.plantName)),
+                          DataCell(Text(item.beforeProcess)),
+                          DataCell(Text(item.afterProcess)),
+                          DataCell(Text(item.machineName)),
+                          DataCell(
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  '${formatQuantity(item.goodQuantity, item.outputUnit)} / ${formatQuantity(item.repairQuantity, item.outputUnit)} / ${formatQuantity(item.ngQuantity, item.outputUnit)}',
+                                ),
+                                if (item.bomConsumableQuantity > 0)
+                                  Text(
+                                    'Consumable ${formatQuantity(item.bomConsumableQuantity, item.unit)} ${unitLabel(item.unit)}',
+                                    style: const TextStyle(
+                                      color: Color(0xFF667085),
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          DataCell(
+                            item.canReverse
+                                ? OutlinedButton(
+                                    onPressed: () => _reverse(item),
+                                    child: const Text('Reverse'),
+                                  )
+                                : const Text('-'),
+                          ),
+                        ],
+                      ),
+                    )
+                    .toList(),
+              ),
+      ),
+    );
+  }
+
+  Widget _transferTable() => Card(
     clipBehavior: Clip.antiAlias,
     child: ScrollableDataTable(
-      child: _view == _WipView.queue
-          ? DataTable(
-              columns: const [
-                DataColumn(label: Text('LOT / SEGMENT')),
-                DataColumn(label: Text('PRODUCT / DESCRIPTION')),
-                DataColumn(label: Text('QTY / UNIT')),
-                DataColumn(label: Text('PLANT')),
-                DataColumn(label: Text('CURRENT PROCESS')),
-                DataColumn(label: Text('SOURCE')),
-                DataColumn(label: Text('STATUS')),
-                DataColumn(label: Text('ACTION')),
-              ],
-              rows: _jobs
-                  .map(
-                    (job) => DataRow(
-                      cells: [
-                        DataCell(Text('${job.lotNumber}\n${job.segmentCode}')),
-                        DataCell(
-                          SizedBox(
-                            width: 230,
-                            child: Text(
-                              '${job.productCode} — ${job.description}',
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                        DataCell(
-                          Text(
-                            '${_number(job.currentQuantity)} ${unitLabel(job.unit)}',
-                          ),
-                        ),
-                        DataCell(Text(job.plantName)),
-                        DataCell(
-                          Text('${job.processCode} — ${job.processName}'),
-                        ),
-                        DataCell(Text(job.sourceTransferNumber)),
-                        DataCell(_jobStatus(job.status)),
-                        DataCell(
-                          FilledButton(
-                            onPressed: job.canComplete
-                                ? () => _complete(job)
-                                : null,
-                            child: const Text('Process'),
-                          ),
-                        ),
-                      ],
+      child: DataTable(
+        columns: const [
+          DataColumn(label: Text('DATE / NUMBER')),
+          DataColumn(label: Text('PRODUCT / LOT')),
+          DataColumn(label: Text('QTY / UNIT')),
+          DataColumn(label: Text('FROM PLANT / OP')),
+          DataColumn(label: Text('TO PLANT / OP')),
+          DataColumn(label: Text('STATUS')),
+          DataColumn(label: Text('ACTION')),
+        ],
+        rows: _transfers
+            .map(
+              (transfer) => DataRow(
+                cells: [
+                  DataCell(Text('${_date(transfer.date)}\n${transfer.number}')),
+                  DataCell(
+                    SizedBox(
+                      width: 220,
+                      child: Text(
+                        '${transfer.productName}\nLot ${transfer.lotNumber} • ${transfer.segmentCode}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  )
-                  .toList(),
+                  ),
+                  DataCell(
+                    Text(
+                      '${_number(transfer.quantity)} ${unitLabel(transfer.unit)}',
+                    ),
+                  ),
+                  DataCell(
+                    Text(
+                      '${transfer.sourcePlantCode} — ${transfer.sourcePlantName}\n'
+                      '${transfer.sourceProcessCode} — ${transfer.sourceProcessName}',
+                    ),
+                  ),
+                  DataCell(
+                    Text(
+                      '${transfer.destinationPlantCode} — ${transfer.destinationPlantName}\n'
+                      '${transfer.destinationProcessCode} — ${transfer.destinationProcessName}',
+                    ),
+                  ),
+                  DataCell(_transferStatus(transfer.status)),
+                  DataCell(
+                    transfer.canReceive
+                        ? FilledButton(
+                            onPressed: () => _receiveInterPlant(transfer),
+                            child: const Text('Receive'),
+                          )
+                        : const Text('-'),
+                  ),
+                ],
+              ),
             )
-          : DataTable(
-              columns: const [
-                DataColumn(label: Text('DATE')),
-                DataColumn(label: Text('NUMBER')),
-                DataColumn(label: Text('SHIFT')),
-                DataColumn(label: Text('DESCRIPTION / LOT')),
-                DataColumn(label: Text('QTY / UNIT')),
-                DataColumn(label: Text('PLANT')),
-                DataColumn(label: Text('BEFORE')),
-                DataColumn(label: Text('AFTER')),
-                DataColumn(label: Text('MACHINE')),
-                DataColumn(label: Text('GOOD / REPAIR / NG')),
-                DataColumn(label: Text('ACTION')),
-              ],
-              rows: _executions
-                  .map(
-                    (item) => DataRow(
-                      onSelectChanged: (_) => _executionDetail(item),
-                      cells: [
-                        DataCell(Text(_date(item.date))),
-                        DataCell(
-                          Text(
-                            item.number,
-                            style: const TextStyle(
-                              fontFamily: 'monospace',
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                        DataCell(Text(item.shift)),
-                        DataCell(
-                          SizedBox(
-                            width: 220,
-                            child: Text(
-                              '${item.description}\nLot ${item.lotNumber}',
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                        DataCell(
-                          Text(
-                            '${_number(item.processingQuantity)} ${unitLabel(item.unit)}',
-                          ),
-                        ),
-                        DataCell(Text(item.plantName)),
-                        DataCell(Text(item.beforeProcess)),
-                        DataCell(Text(item.afterProcess)),
-                        DataCell(Text(item.machineName)),
-                        DataCell(
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                '${formatQuantity(item.goodQuantity, item.outputUnit)} / ${formatQuantity(item.repairQuantity, item.outputUnit)} / ${formatQuantity(item.ngQuantity, item.outputUnit)}',
-                              ),
-                              if (item.bomConsumableQuantity > 0)
-                                Text(
-                                  'Consumable ${formatQuantity(item.bomConsumableQuantity, item.unit)} ${unitLabel(item.unit)}',
-                                  style: const TextStyle(
-                                    color: Color(0xFF667085),
-                                    fontSize: 12,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                        DataCell(
-                          item.canReverse
-                              ? OutlinedButton(
-                                  onPressed: () => _reverse(item),
-                                  child: const Text('Reverse'),
-                                )
-                              : const Text('-'),
-                        ),
-                      ],
-                    ),
-                  )
-                  .toList(),
-            ),
+            .toList(),
+      ),
     ),
   );
 
   Widget _cards() => ListView.separated(
     padding: const EdgeInsets.only(bottom: 88),
-    itemCount: _view == _WipView.queue ? _jobs.length : _executions.length,
+    itemCount: switch (_view) {
+      _WipView.queue => _jobs.length,
+      _WipView.transfers => _transfers.length,
+      _WipView.history => _executions.length,
+    },
     separatorBuilder: (_, _) => const SizedBox(height: 10),
     itemBuilder: (context, index) {
       if (_view == _WipView.queue) {
         final job = _jobs[index];
         return Card(
-          child: ListTile(
-            onTap: job.canComplete ? () => _complete(job) : null,
-            title: Text('${job.processCode} — ${job.processName}'),
-            subtitle: Text(
-              '${job.description}\nLot ${job.lotNumber} • ${_number(job.currentQuantity)} ${unitLabel(job.unit)}\n${job.plantName}',
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${job.processCode} — ${job.processName}',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    _jobStatus(job.status),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${job.description}\nLot ${job.lotNumber} • ${_number(job.currentQuantity)} ${unitLabel(job.unit)}\n${job.plantCode} — ${job.plantName}',
+                ),
+                if (job.canComplete) ...[
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      FilledButton.icon(
+                        onPressed: () => _complete(job),
+                        icon: const Icon(Icons.precision_manufacturing),
+                        label: const Text('Process'),
+                      ),
+                      if (job.processType == 'production')
+                        OutlinedButton.icon(
+                          onPressed: () => _dispatchToPlant(job),
+                          icon: const Icon(Icons.swap_horiz),
+                          label: const Text('Transfer Plant'),
+                        ),
+                    ],
+                  ),
+                ],
+              ],
             ),
-            isThreeLine: true,
-            trailing: _jobStatus(job.status),
+          ),
+        );
+      }
+      if (_view == _WipView.transfers) {
+        final transfer = _transfers[index];
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        transfer.number,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    _transferStatus(transfer.status),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${transfer.productName} — ${transfer.description}\n'
+                  'Lot ${transfer.lotNumber} • ${_number(transfer.quantity)} ${unitLabel(transfer.unit)}\n'
+                  '${transfer.sourcePlantCode} / ${transfer.sourceProcessCode} → '
+                  '${transfer.destinationPlantCode} / ${transfer.destinationProcessCode}\n'
+                  'Dispatched ${_date(transfer.date)} by ${transfer.dispatchedByName}'
+                  '${transfer.receivedByName == null ? '' : '\nReceived by ${transfer.receivedByName}'}',
+                ),
+                if (transfer.canReceive) ...[
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton.icon(
+                      onPressed: () => _receiveInterPlant(transfer),
+                      icon: const Icon(Icons.move_to_inbox_outlined),
+                      label: const Text('Receive WIP'),
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
         );
       }
@@ -1050,6 +1306,14 @@ class _WipProductionPageState extends State<WipProductionPage> {
   Widget _jobStatus(String value) => Chip(
     visualDensity: VisualDensity.compact,
     label: Text(value.replaceAll('_', ' ').toUpperCase()),
+  );
+
+  Widget _transferStatus(String value) => Chip(
+    visualDensity: VisualDensity.compact,
+    label: Text(value == 'in_transit' ? 'IN TRANSIT' : 'RECEIVED'),
+    backgroundColor: value == 'in_transit'
+        ? const Color(0xFFFFF4D6)
+        : const Color(0xFFE3F4EC),
   );
 }
 
