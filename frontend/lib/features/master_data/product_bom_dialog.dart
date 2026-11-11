@@ -272,6 +272,7 @@ class _ProductBomDialogState extends State<ProductBomDialog> {
   Widget _lineEditor(int index) {
     final line = _lines[index];
     return Row(
+      key: ObjectKey(line),
       children: [
         Expanded(
           flex: 3,

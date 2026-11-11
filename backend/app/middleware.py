@@ -6,7 +6,11 @@ from starlette.responses import JSONResponse, Response
 from app.config import settings
 from app.database import SessionLocal
 from app.models import Department, User
-from app.module_permissions import resolve_department_access, resolve_department_membership
+from app.module_permissions import (
+    resolve_department_access,
+    resolve_department_membership,
+    resolve_invoice_department_access,
+)
 from app.security import decode_access_token
 
 
@@ -85,11 +89,10 @@ class DepartmentModuleMiddleware(BaseHTTPMiddleware):
             protected_module = (settings.warehouse_department_code, "Warehouse", True)
         elif is_purchasing_path(request.url.path):
             protected_module = (settings.purchasing_department_code, "Purchasing", False)
-        elif (
-            is_sales_order_path(request.url.path)
-            or is_quotation_path(request.url.path)
-            or is_invoice_path(request.url.path)
-        ):
+        elif is_invoice_path(request.url.path):
+            # Invoices are shared by Sales and Purchasing.
+            protected_module = ("", "Sales or Purchasing", False)
+        elif is_sales_order_path(request.url.path) or is_quotation_path(request.url.path):
             protected_module = (settings.sales_department_code, "Sales", False)
         elif (
             is_receiving_path(request.url.path)
@@ -135,9 +138,18 @@ class DepartmentModuleMiddleware(BaseHTTPMiddleware):
                     )
                 return await call_next(request)
             department_code, department_name, allow_members = protected_module
-            department = await db.get(Department, department_code)
-            resolver = resolve_department_membership if allow_members else resolve_department_access
-            access = resolver(user, department) if user else None
+            if is_invoice_path(request.url.path):
+                sales_department = await db.get(Department, settings.sales_department_code)
+                purchasing_department = await db.get(Department, settings.purchasing_department_code)
+                access = (
+                    resolve_invoice_department_access(user, sales_department, purchasing_department)
+                    if user
+                    else None
+                )
+            else:
+                department = await db.get(Department, department_code)
+                resolver = resolve_department_membership if allow_members else resolve_department_access
+                access = resolver(user, department) if user else None
             if access is None or not access.can_access:
                 return JSONResponse(
                     status_code=status.HTTP_403_FORBIDDEN,

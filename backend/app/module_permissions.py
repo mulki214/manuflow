@@ -29,6 +29,21 @@ def resolve_department_access(user: User, department: Department | None) -> Depa
     return DepartmentModuleAccess(can_access=is_pic or is_head, is_pic=is_pic, is_head=is_head)
 
 
+def resolve_invoice_department_access(
+    user: User,
+    sales_department: Department | None,
+    purchasing_department: Department | None,
+) -> DepartmentModuleAccess:
+    """Invoices are available to the Sales or Purchasing department access groups."""
+    sales_access = resolve_department_access(user, sales_department)
+    purchasing_access = resolve_department_access(user, purchasing_department)
+    return DepartmentModuleAccess(
+        can_access=sales_access.can_access or purchasing_access.can_access,
+        is_pic=sales_access.is_pic or purchasing_access.is_pic,
+        is_head=sales_access.is_head or purchasing_access.is_head,
+    )
+
+
 def resolve_department_membership(user: User, department: Department | None) -> DepartmentModuleAccess:
     if not user.is_active:
         return DepartmentModuleAccess(can_access=False, is_pic=False, is_head=False)

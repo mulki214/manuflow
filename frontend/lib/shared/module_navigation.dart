@@ -41,7 +41,7 @@ void navigateToModule(
     AppModule.quotation when auth.canAccessSalesOrder => QuotationPage(
       auth: auth,
     ),
-    AppModule.invoice when auth.canAccessSalesOrder => InvoicePage(auth: auth),
+    AppModule.invoice when auth.canAccessInvoice => InvoicePage(auth: auth),
     AppModule.qrLabel => QrLabelPage(auth: auth),
     AppModule.purchasing when auth.canAccessPurchasing => PurchasingPage(
       auth: auth,

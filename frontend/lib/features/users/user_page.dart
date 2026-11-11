@@ -700,7 +700,7 @@ class _AppDrawer extends StatelessWidget {
                         AppModule.purchasing => auth.canAccessPurchasing,
                         AppModule.salesOrder => auth.canAccessSalesOrder,
                         AppModule.quotation => auth.canAccessSalesOrder,
-                        AppModule.invoice => auth.canAccessSalesOrder,
+                        AppModule.invoice => auth.canAccessInvoice,
                         AppModule.receiving => auth.canAccessReceiving,
                         AppModule.warehouse => auth.canAccessWarehouse,
                         AppModule.production => auth.canAccessProduction,
