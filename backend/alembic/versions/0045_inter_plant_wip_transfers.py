@@ -20,6 +20,7 @@ def upgrade() -> None:
         "in_transit",
         "received",
         name="inter_plant_wip_transfer_status_enum",
+        create_type=False,
     )
     status_enum.create(op.get_bind(), checkfirst=True)
 
