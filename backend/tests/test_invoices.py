@@ -13,6 +13,8 @@ from app.invoice_services import (
     invoice_totals,
 )
 from app.middleware import is_invoice_path
+from app.models import Department, User
+from app.module_permissions import resolve_invoice_department_access
 from app.schemas import InvoiceCreate
 
 
@@ -53,6 +55,18 @@ def test_invoice_number_and_middleware_path_matching() -> None:
     assert is_invoice_path("/api/v1/invoices")
     assert is_invoice_path("/api/v1/invoices/INV-261102-007/pdf")
     assert not is_invoice_path("/api/v1/invoices-report")
+
+
+def test_invoice_access_is_granted_to_sales_or_purchasing_pic_or_head_only() -> None:
+    sales = Department(code="SALES", name="Sales", head_user_id="000000001")
+    purchasing = Department(code="PURCHASING", name="Purchasing", head_user_id="000000002")
+    sales_user = User(id="000000001", department_code="SALES", is_active=True)
+    purchasing_user = User(id="000000002", department_code="PURCHASING", is_active=True)
+    unrelated_user = User(id="000000003", department_code="WAREHOUSE", is_active=True)
+
+    assert resolve_invoice_department_access(sales_user, sales, purchasing).can_access
+    assert resolve_invoice_department_access(purchasing_user, sales, purchasing).can_access
+    assert not resolve_invoice_department_access(unrelated_user, sales, purchasing).can_access
 
 
 def test_invoice_rejects_duplicate_source_line_and_due_date_before_issue_date() -> None:

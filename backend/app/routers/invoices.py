@@ -31,7 +31,11 @@ from app.models import (
     SalesOrderItem,
     User,
 )
-from app.module_permissions import DepartmentModuleAccess, ensure_department_access, resolve_department_access
+from app.module_permissions import (
+    DepartmentModuleAccess,
+    ensure_department_access,
+    resolve_invoice_department_access,
+)
 from app.operational_services import require_whole_quantity
 from app.schemas import (
     InvoiceCreate,
@@ -45,9 +49,10 @@ router = APIRouter(prefix="/invoices", tags=["Invoice"])
 
 
 async def current_access(db: AsyncSession, user: User) -> DepartmentModuleAccess:
-    department = await db.get(Department, settings.sales_department_code)
-    access = resolve_department_access(user, department)
-    ensure_department_access(access, "Sales")
+    sales_department = await db.get(Department, settings.sales_department_code)
+    purchasing_department = await db.get(Department, settings.purchasing_department_code)
+    access = resolve_invoice_department_access(user, sales_department, purchasing_department)
+    ensure_department_access(access, "Sales or Purchasing")
     return access
 
 
