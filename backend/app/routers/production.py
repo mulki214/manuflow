@@ -17,6 +17,8 @@ from app.models import (
     Department,
     FinishGoodReceipt,
     FinishGoodStatus,
+    InterPlantWipTransfer,
+    InterPlantWipTransferStatus,
     Machine,
     Plant,
     Product,
@@ -46,11 +48,16 @@ from app.production_services import (
     child_segment_code,
     ensure_production_execution_reversible,
     generate_production_number,
+    interplant_job_segment_code,
     next_job_status,
+    validate_interplant_destination,
 )
 from app.schemas import (
     ConsumableDispositionCreate,
     ConsumableDispositionResponse,
+    InterPlantWipTransferCreate,
+    InterPlantWipTransferResponse,
+    PaginatedInterPlantWipTransfers,
     PaginatedProductionExecutions,
     PaginatedProductionWipJobs,
     PaginatedWipProcesses,
@@ -295,6 +302,44 @@ async def job_response(db: AsyncSession, record: WipLotJob) -> ProductionWipJobR
     )
 
 
+def interplant_transfer_number(record: InterPlantWipTransfer) -> str:
+    return f"IPW-{record.transfer_date:%d%m%y}-{record.id:04d}"
+
+
+def interplant_transfer_response(record: InterPlantWipTransfer) -> InterPlantWipTransferResponse:
+    return InterPlantWipTransferResponse(
+        id=record.id,
+        transfer_number=interplant_transfer_number(record),
+        transfer_date=record.transfer_date,
+        source_job_id=record.source_job_id,
+        received_job_id=record.received_job_id,
+        product_code=record.product_code,
+        product_name=record.product_name,
+        description=record.description,
+        lot_number=record.lot_number,
+        lot_segment_code=record.lot_segment_code,
+        unit=record.unit,
+        quantity=record.quantity,
+        source_plant_code=record.source_plant_code,
+        source_plant_name=record.source_plant_name,
+        source_process_code=record.source_process_code,
+        source_process_name=record.source_process_name,
+        destination_plant_code=record.destination_plant_code,
+        destination_plant_name=record.destination_plant_name,
+        destination_process_code=record.destination_process_code,
+        destination_process_name=record.destination_process_name,
+        status=record.status,
+        notes=record.notes,
+        dispatched_by=record.dispatched_by,
+        dispatched_by_name=record.dispatched_by_name,
+        dispatched_at=record.dispatched_at,
+        received_by=record.received_by,
+        received_by_name=record.received_by_name,
+        received_at=record.received_at,
+        can_receive=record.status == InterPlantWipTransferStatus.in_transit,
+    )
+
+
 async def execution_response(db: AsyncSession, record: ProductionExecution) -> ProductionExecutionResponse:
     plant = await db.get(Plant, record.plant_code)
     repair_process = await db.get(WipProcess, record.repair_process_code) if record.repair_process_code else None
@@ -491,6 +536,237 @@ async def get_wip_job(
     if not record:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="WIP Job not found")
     return await job_response(db, record)
+
+
+@router.get("/wip-jobs/{job_id}/inter-plant-destinations", response_model=list[WipProcessResponse])
+async def list_interplant_destinations(
+    job_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[WipProcessResponse]:
+    await current_access(db, current_user)
+    job = await db.get(WipLotJob, job_id)
+    if not job or not job.process_code:
+        raise HTTPException(status_code=404, detail="Production WIP Job not found")
+    if job.status not in (WipLotStatus.queued, WipLotStatus.in_process) or job.current_quantity <= 0:
+        raise HTTPException(status_code=409, detail="WIP Job is not available for transfer")
+    processes = list(
+        (
+            await db.execute(
+                select(WipProcess)
+                .join(Plant, Plant.code == WipProcess.plant_code)
+                .join(
+                    ProductProcessStandard,
+                    (ProductProcessStandard.process_code == WipProcess.code)
+                    & (ProductProcessStandard.product_code == job.product_code)
+                    & ProductProcessStandard.is_active.is_(True),
+                )
+                .where(
+                    WipProcess.is_active.is_(True),
+                    WipProcess.process_type == WipProcessType.production,
+                    WipProcess.plant_code != job.plant_code,
+                )
+                .order_by(WipProcess.plant_code, WipProcess.code)
+            )
+        )
+        .scalars()
+        .unique()
+        .all()
+    )
+    return [await process_response(db, process) for process in processes]
+
+
+@router.get("/inter-plant-transfers", response_model=PaginatedInterPlantWipTransfers)
+async def list_interplant_transfers(
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    search: str | None = None,
+    plant_code: str | None = None,
+    transfer_status: InterPlantWipTransferStatus | None = Query(default=None, alias="status"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PaginatedInterPlantWipTransfers:
+    await current_access(db, current_user)
+    filters = []
+    if search:
+        term = f"%{search.strip()}%"
+        filters.append(
+            or_(
+                InterPlantWipTransfer.product_code.ilike(term),
+                InterPlantWipTransfer.product_name.ilike(term),
+                InterPlantWipTransfer.description.ilike(term),
+                InterPlantWipTransfer.lot_number.ilike(term),
+                InterPlantWipTransfer.lot_segment_code.ilike(term),
+                InterPlantWipTransfer.source_process_code.ilike(term),
+                InterPlantWipTransfer.source_process_name.ilike(term),
+                InterPlantWipTransfer.destination_process_code.ilike(term),
+                InterPlantWipTransfer.destination_process_name.ilike(term),
+                InterPlantWipTransfer.source_plant_code.ilike(term),
+                InterPlantWipTransfer.destination_plant_code.ilike(term),
+            )
+        )
+    if plant_code:
+        filters.append(
+            or_(
+                InterPlantWipTransfer.source_plant_code == plant_code,
+                InterPlantWipTransfer.destination_plant_code == plant_code,
+            )
+        )
+    if transfer_status:
+        filters.append(InterPlantWipTransfer.status == transfer_status)
+    query = select(InterPlantWipTransfer).where(*filters)
+    records = list(
+        (
+            await db.execute(
+                query.order_by(InterPlantWipTransfer.dispatched_at.desc(), InterPlantWipTransfer.id.desc())
+                .offset((page - 1) * size)
+                .limit(size)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    total = await db.scalar(select(func.count()).select_from(InterPlantWipTransfer).where(*filters))
+    return PaginatedInterPlantWipTransfers(
+        items=[interplant_transfer_response(record) for record in records],
+        total=total or 0,
+        page=page,
+        size=size,
+    )
+
+
+@router.post(
+    "/wip-jobs/{job_id}/inter-plant-transfers",
+    response_model=InterPlantWipTransferResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def dispatch_interplant_wip(
+    job_id: int,
+    data: InterPlantWipTransferCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> InterPlantWipTransferResponse:
+    await current_access(db, current_user)
+    job = (await db.execute(select(WipLotJob).where(WipLotJob.id == job_id).with_for_update())).scalar_one_or_none()
+    if not job or not job.process_code:
+        raise HTTPException(status_code=404, detail="Production WIP Job not found")
+    if job.status not in (WipLotStatus.queued, WipLotStatus.in_process) or job.current_quantity <= 0:
+        raise HTTPException(status_code=409, detail="WIP Job is not available for transfer")
+    source_process = await db.get(WipProcess, job.process_code)
+    destination_process = await db.get(WipProcess, data.destination_process_code)
+    product = await db.get(Product, job.product_code)
+    source_plant = await db.get(Plant, job.plant_code)
+    destination_plant = await db.get(Plant, destination_process.plant_code) if destination_process else None
+    has_standard = bool(
+        await db.scalar(
+            select(ProductProcessStandard.id)
+            .where(
+                ProductProcessStandard.product_code == job.product_code,
+                ProductProcessStandard.process_code == data.destination_process_code,
+                ProductProcessStandard.is_active.is_(True),
+            )
+            .limit(1)
+        )
+    )
+    if not source_process or not destination_process or not product or not source_plant or not destination_plant:
+        raise HTTPException(status_code=409, detail="WIP Job or destination reference is incomplete")
+    if source_process.plant_code != source_plant.code:
+        raise HTTPException(status_code=409, detail="WIP Job source Plant does not match its current Process")
+    try:
+        validate_interplant_destination(
+            source_plant.code,
+            source_process.code,
+            source_process.process_type.value,
+            destination_plant.code,
+            destination_process.code,
+            destination_process.process_type.value,
+            destination_process.is_active,
+            has_standard,
+        )
+        require_whole_quantity(data.quantity, job.unit, "Transfer Quantity")
+        moved = quantity(data.quantity)
+        if moved > quantity(job.current_quantity):
+            raise ValueError("Transfer Quantity exceeds available WIP Quantity")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    transfer = InterPlantWipTransfer(
+        transfer_date=data.transfer_date,
+        source_job_id=job.id,
+        product_code=product.code,
+        product_name=product.part_name,
+        description=product.description,
+        lot_number=job.lot_number,
+        lot_segment_code=job.lot_segment_code,
+        unit=job.unit,
+        quantity=moved,
+        source_plant_code=source_plant.code,
+        source_plant_name=source_plant.name,
+        source_process_code=source_process.code,
+        source_process_name=source_process.name,
+        destination_plant_code=destination_plant.code,
+        destination_plant_name=destination_plant.name,
+        destination_process_code=destination_process.code,
+        destination_process_name=destination_process.name,
+        status=InterPlantWipTransferStatus.in_transit,
+        notes=data.notes.strip(),
+        dispatched_by=current_user.id,
+        dispatched_by_name=f"{current_user.first_name} {current_user.last_name}".strip(),
+    )
+    db.add(transfer)
+    job.current_quantity = quantity(job.current_quantity - moved)
+    job.status = next_job_status(job.current_quantity)
+    await db.commit()
+    await db.refresh(transfer)
+    return interplant_transfer_response(transfer)
+
+
+@router.post("/inter-plant-transfers/{transfer_id}/receive", response_model=InterPlantWipTransferResponse)
+async def receive_interplant_wip(
+    transfer_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> InterPlantWipTransferResponse:
+    await current_access(db, current_user)
+    transfer = (
+        await db.execute(select(InterPlantWipTransfer).where(InterPlantWipTransfer.id == transfer_id).with_for_update())
+    ).scalar_one_or_none()
+    if not transfer:
+        raise HTTPException(status_code=404, detail="Inter-Plant WIP Transfer not found")
+    if transfer.status != InterPlantWipTransferStatus.in_transit:
+        raise HTTPException(status_code=409, detail="Inter-Plant WIP Transfer has already been received")
+    source_job = await db.get(WipLotJob, transfer.source_job_id)
+    process = await db.get(WipProcess, transfer.destination_process_code)
+    if not source_job or not process or process.plant_code != transfer.destination_plant_code:
+        raise HTTPException(status_code=409, detail="Inter-Plant WIP Transfer destination is no longer valid")
+
+    received_job = WipLotJob(
+        source_transfer_number=source_job.source_transfer_number,
+        sales_order_item_id=source_job.sales_order_item_id,
+        parent_job_id=source_job.id,
+        repair_route_code=None,
+        repair_step_order=None,
+        repair_return_process_code=None,
+        process_code=process.code,
+        product_code=transfer.product_code,
+        lot_number=transfer.lot_number,
+        lot_segment_code=interplant_job_segment_code(transfer.lot_segment_code, transfer.id),
+        plant_code=transfer.destination_plant_code,
+        unit=transfer.unit,
+        input_quantity=transfer.quantity,
+        current_quantity=transfer.quantity,
+        status=WipLotStatus.queued,
+    )
+    db.add(received_job)
+    await db.flush()
+    transfer.received_job_id = received_job.id
+    transfer.status = InterPlantWipTransferStatus.received
+    transfer.received_by = current_user.id
+    transfer.received_by_name = f"{current_user.first_name} {current_user.last_name}".strip()
+    transfer.received_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(transfer)
+    return interplant_transfer_response(transfer)
 
 
 @router.get("/executions", response_model=PaginatedProductionExecutions)
@@ -950,6 +1226,13 @@ async def reverse_production_execution(
                     select(func.count())
                     .select_from(ProductionExecution)
                     .where(ProductionExecution.job_id.in_(child_ids), ProductionExecution.reversed_at.is_(None))
+                )
+            )
+            or bool(
+                await db.scalar(
+                    select(func.count())
+                    .select_from(InterPlantWipTransfer)
+                    .where(InterPlantWipTransfer.source_job_id.in_(child_ids))
                 )
             )
         )

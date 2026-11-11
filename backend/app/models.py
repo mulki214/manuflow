@@ -181,6 +181,11 @@ class WarehouseTransferStatus(str, enum.Enum):
     reversed = "reversed"
 
 
+class InterPlantWipTransferStatus(str, enum.Enum):
+    in_transit = "in_transit"
+    received = "received"
+
+
 class WipProcessType(str, enum.Enum):
     production = "production"
     quality = "quality"
@@ -675,7 +680,9 @@ class InvoiceItem(Base):
     sales_order_item_id: Mapped[int] = mapped_column(
         ForeignKey("sales_order_items.id", ondelete="RESTRICT"), nullable=False, index=True
     )
-    product_code: Mapped[str] = mapped_column(ForeignKey("products.code", ondelete="RESTRICT"), nullable=False)
+    product_code: Mapped[str] = mapped_column(
+        ForeignKey("products.code", ondelete="RESTRICT"), nullable=False, index=True
+    )
     part_name: Mapped[str] = mapped_column(String(200), nullable=False)
     part_no: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
@@ -1219,6 +1226,64 @@ class WipLotJob(Base):
     status: Mapped[WipLotStatus] = mapped_column(
         Enum(WipLotStatus, name="wip_lot_status_enum"), nullable=False, index=True
     )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class InterPlantWipTransfer(Base):
+    """Auditable movement of an existing WIP quantity between plants."""
+
+    __tablename__ = "inter_plant_wip_transfers"
+    __table_args__ = (UniqueConstraint("received_job_id", name="uq_interplant_received_job"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    transfer_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    source_job_id: Mapped[int] = mapped_column(
+        ForeignKey("wip_lot_jobs.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    received_job_id: Mapped[int | None] = mapped_column(
+        ForeignKey("wip_lot_jobs.id", ondelete="RESTRICT"), nullable=True
+    )
+    product_code: Mapped[str] = mapped_column(
+        ForeignKey("products.code", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    product_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    lot_number: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    lot_segment_code: Mapped[str] = mapped_column(String(40), nullable=False)
+    unit: Mapped[str] = mapped_column(String(10), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(20, 3), nullable=False)
+    source_plant_code: Mapped[str] = mapped_column(
+        ForeignKey("plants.code", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    source_plant_name: Mapped[str] = mapped_column(String(150), nullable=False)
+    source_process_code: Mapped[str] = mapped_column(
+        ForeignKey("wip_processes.code", ondelete="RESTRICT"), nullable=False
+    )
+    source_process_name: Mapped[str] = mapped_column(String(150), nullable=False)
+    destination_plant_code: Mapped[str] = mapped_column(
+        ForeignKey("plants.code", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    destination_plant_name: Mapped[str] = mapped_column(String(150), nullable=False)
+    destination_process_code: Mapped[str] = mapped_column(
+        ForeignKey("wip_processes.code", ondelete="RESTRICT"), nullable=False
+    )
+    destination_process_name: Mapped[str] = mapped_column(String(150), nullable=False)
+    status: Mapped[InterPlantWipTransferStatus] = mapped_column(
+        Enum(InterPlantWipTransferStatus, name="inter_plant_wip_transfer_status_enum"),
+        nullable=False,
+        default=InterPlantWipTransferStatus.in_transit,
+        index=True,
+    )
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    dispatched_by: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    dispatched_by_name: Mapped[str] = mapped_column(String(201), nullable=False)
+    dispatched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    received_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    received_by_name: Mapped[str | None] = mapped_column(String(201), nullable=True)
+    received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
