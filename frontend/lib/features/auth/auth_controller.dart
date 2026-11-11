@@ -56,6 +56,7 @@ class AuthController extends ChangeNotifier {
   bool get isAuthenticated => currentUser != null && api.token != null;
   bool get canAccessPurchasing => purchasingAccess.canAccess;
   bool get canAccessSalesOrder => salesOrderAccess.canAccess;
+  bool get canAccessInvoice => canAccessSalesOrder || canAccessPurchasing;
   bool get canAccessReceiving => receivingAccess.canAccess;
   bool get canAccessWarehouse => warehouseAccess.canAccess;
   bool get canAccessProduction => productionAccess.canAccess;
