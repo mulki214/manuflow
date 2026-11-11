@@ -740,6 +740,7 @@ class _PurchaseOrderFormDialogState extends State<PurchaseOrderFormDialog> {
   Widget _itemCard(int index, _OrderItemDraft item) {
     final candidates = _candidatesForItem();
     return Card(
+      key: ObjectKey(item),
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
         padding: const EdgeInsets.all(16),

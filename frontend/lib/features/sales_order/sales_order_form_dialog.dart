@@ -561,6 +561,7 @@ class _SalesOrderFormDialogState extends State<SalesOrderFormDialog> {
   );
 
   Widget _itemCard(int index, _SalesItemDraft item) => Card(
+    key: ObjectKey(item),
     margin: const EdgeInsets.only(bottom: 12),
     child: Padding(
       padding: const EdgeInsets.all(16),
