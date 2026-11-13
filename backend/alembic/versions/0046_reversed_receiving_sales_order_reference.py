@@ -1,6 +1,6 @@
 """Retain SO identifiers on receiving history independently of SO item links.
 
-Revision ID: 0046_reversed_receiving_sales_order_reference
+Revision ID: 0046_rev_receiving_so_ref
 Revises: 0045_inter_plant_wip_transfers
 """
 
@@ -8,7 +8,7 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "0046_reversed_receiving_sales_order_reference"
+revision = "0046_rev_receiving_so_ref"
 down_revision = "0045_inter_plant_wip_transfers"
 branch_labels = None
 depends_on = None
