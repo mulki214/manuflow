@@ -15,6 +15,7 @@ from app.warehouse_services import (
     ensure_wip_job_reversible,
     format_transfer_number,
     move_quantity,
+    warehouse_wip_segment_code,
 )
 
 
@@ -43,6 +44,25 @@ def test_transfer_number_uses_daily_sequence() -> None:
     assert format_transfer_number(date(2026, 8, 19), 999) == "SM-190826-999"
     with pytest.raises(ValueError):
         format_transfer_number(date(2026, 8, 19), 1000)
+
+
+def test_warehouse_wip_segment_preserves_full_transfer_number_with_long_lots() -> None:
+    transfer_number = "SM-131126-000"
+    segment = warehouse_wip_segment_code("LOT-" + "X" * 80, transfer_number)
+
+    assert len(segment) <= 40
+    assert segment.endswith(f"-{transfer_number}")
+    assert segment == f"{'LOT-' + 'X' * 22}-{transfer_number}"
+    assert warehouse_wip_segment_code("A" * 100, "SM-131126-001") != segment
+
+
+def test_warehouse_wip_segment_keeps_short_lot_unchanged() -> None:
+    assert warehouse_wip_segment_code("LOT-007", "SM-131126-000") == "LOT-007-SM-131126-000"
+
+
+def test_warehouse_wip_segment_rejects_transfer_number_that_cannot_fit() -> None:
+    with pytest.raises(ValueError, match="too long"):
+        warehouse_wip_segment_code("LOT-1", "T" * 40)
 
 
 def test_partial_transfer_preserves_source_and_destination_quantity() -> None:
