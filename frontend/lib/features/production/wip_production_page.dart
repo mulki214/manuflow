@@ -21,6 +21,7 @@ import 'consumable_disposition_dialog.dart';
 import 'inter_plant_wip_transfer_dialog.dart';
 import 'production_page.dart';
 import 'wip_execution_form_dialog.dart';
+import 'wip_queue_actions.dart';
 
 enum _WipView { queue, transfers, history }
 
@@ -845,6 +846,8 @@ class _WipProductionPageState extends State<WipProductionPage> {
       child: ScrollableDataTable(
         child: _view == _WipView.queue
             ? DataTable(
+                dataRowMinHeight: 68,
+                dataRowMaxHeight: 84,
                 columns: const [
                   DataColumn(label: Text('LOT / SEGMENT')),
                   DataColumn(label: Text('PRODUCT / DESCRIPTION')),
@@ -884,23 +887,16 @@ class _WipProductionPageState extends State<WipProductionPage> {
                           DataCell(Text(job.sourceTransferNumber)),
                           DataCell(_jobStatus(job.status)),
                           DataCell(
-                            Wrap(
-                              spacing: 6,
-                              children: [
-                                FilledButton(
-                                  onPressed: job.canComplete
-                                      ? () => _complete(job)
-                                      : null,
-                                  child: const Text('Process'),
-                                ),
-                                if (job.canComplete &&
-                                    job.processType == 'production')
-                                  OutlinedButton.icon(
-                                    onPressed: () => _dispatchToPlant(job),
-                                    icon: const Icon(Icons.swap_horiz),
-                                    label: const Text('Transfer Plant'),
-                                  ),
-                              ],
+                            SizedBox(
+                              width: 390,
+                              child: WipQueueActions(
+                                canProcess: job.canComplete,
+                                canTransfer:
+                                    job.canComplete &&
+                                    job.processType == 'production',
+                                onProcess: () => _complete(job),
+                                onTransfer: () => _dispatchToPlant(job),
+                              ),
                             ),
                           ),
                         ],

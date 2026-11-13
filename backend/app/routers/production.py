@@ -555,12 +555,6 @@ async def list_interplant_destinations(
             await db.execute(
                 select(WipProcess)
                 .join(Plant, Plant.code == WipProcess.plant_code)
-                .join(
-                    ProductProcessStandard,
-                    (ProductProcessStandard.process_code == WipProcess.code)
-                    & (ProductProcessStandard.product_code == job.product_code)
-                    & ProductProcessStandard.is_active.is_(True),
-                )
                 .where(
                     WipProcess.is_active.is_(True),
                     WipProcess.process_type == WipProcessType.production,
@@ -657,17 +651,6 @@ async def dispatch_interplant_wip(
     product = await db.get(Product, job.product_code)
     source_plant = await db.get(Plant, job.plant_code)
     destination_plant = await db.get(Plant, destination_process.plant_code) if destination_process else None
-    has_standard = bool(
-        await db.scalar(
-            select(ProductProcessStandard.id)
-            .where(
-                ProductProcessStandard.product_code == job.product_code,
-                ProductProcessStandard.process_code == data.destination_process_code,
-                ProductProcessStandard.is_active.is_(True),
-            )
-            .limit(1)
-        )
-    )
     if not source_process or not destination_process or not product or not source_plant or not destination_plant:
         raise HTTPException(status_code=409, detail="WIP Job or destination reference is incomplete")
     if source_process.plant_code != source_plant.code:
@@ -681,7 +664,6 @@ async def dispatch_interplant_wip(
             destination_process.code,
             destination_process.process_type.value,
             destination_process.is_active,
-            has_standard,
         )
         require_whole_quantity(data.quantity, job.unit, "Transfer Quantity")
         moved = quantity(data.quantity)
