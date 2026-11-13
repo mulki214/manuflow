@@ -1173,6 +1173,7 @@ class ReceivingResponse(BaseModel):
     source_type: ReceivingSourceType | None
     source_code: str | None
     source_document_item_id: int | None
+    sales_order_number: str | None
     subcontract_dispatch_id: int | None
     document_number: str | None
     po_number: str | None
