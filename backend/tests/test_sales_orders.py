@@ -16,6 +16,7 @@ from app.sales_order_services import (
     ensure_sales_waiting_review,
     expand_bom_leaf_requirements,
     format_sales_order_number,
+    sales_order_deletion_allowed,
 )
 from app.schemas import SalesOrderCreate
 
@@ -83,6 +84,21 @@ def test_sales_order_terminal_status_is_read_only() -> None:
         with pytest.raises(HTTPException) as error:
             ensure_sales_waiting_review(terminal_status)
         assert error.value.status_code == 409
+
+
+def test_sales_head_can_delete_approved_order_only_before_downstream_activity() -> None:
+    assert sales_order_deletion_allowed(
+        SalesOrderStatus.approved, is_sales_head=True, has_downstream_activity=False
+    )
+    assert not sales_order_deletion_allowed(
+        SalesOrderStatus.approved, is_sales_head=False, has_downstream_activity=False
+    )
+    assert not sales_order_deletion_allowed(
+        SalesOrderStatus.approved, is_sales_head=True, has_downstream_activity=True
+    )
+    assert sales_order_deletion_allowed(
+        SalesOrderStatus.waiting_review, is_sales_head=False, has_downstream_activity=True
+    )
 
 
 def test_sales_order_validates_dates_and_unique_products() -> None:

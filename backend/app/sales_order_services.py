@@ -138,3 +138,19 @@ def ensure_sales_waiting_review(current_status: SalesOrderStatus) -> None:
             status_code=status.HTTP_409_CONFLICT,
             detail="Approved or rejected sales orders are read-only",
         )
+
+
+def sales_order_deletion_allowed(
+    current_status: SalesOrderStatus,
+    *,
+    is_sales_head: bool,
+    has_downstream_activity: bool,
+) -> bool:
+    """Allow the existing waiting-review delete flow and safe Head Sales cleanup."""
+    if current_status == SalesOrderStatus.waiting_review:
+        return True
+    return (
+        is_sales_head
+        and current_status in {SalesOrderStatus.approved, SalesOrderStatus.rejected}
+        and not has_downstream_activity
+    )
