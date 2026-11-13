@@ -85,17 +85,18 @@ def test_production_number_and_child_segment_are_traceable() -> None:
     assert child_segment_code("LOT-001-SM-190826-000", 12, "G") == "LOT-001-SM-190826-000-12G"
 
 
-def test_interplant_destination_requires_a_different_plant_and_configured_production_op() -> None:
-    validate_interplant_destination("PLANT1", "OP1", "production", "PLANT2", "OP2", "production", True, True)
+def test_interplant_destination_allows_any_active_production_op_at_another_plant() -> None:
+    # Destination selection is intentionally independent of product process standards.
+    validate_interplant_destination("PLANT1", "OP1", "production", "PLANT2", "OP3", "production", True)
 
     with pytest.raises(ValueError, match="another Plant"):
-        validate_interplant_destination("PLANT1", "OP1", "production", "PLANT1", "OP2", "production", True, True)
+        validate_interplant_destination("PLANT1", "OP1", "production", "PLANT1", "OP2", "production", True)
     with pytest.raises(ValueError, match="differ"):
-        validate_interplant_destination("PLANT1", "OP1", "production", "PLANT2", "OP1", "production", True, True)
+        validate_interplant_destination("PLANT1", "OP1", "production", "PLANT2", "OP1", "production", True)
     with pytest.raises(ValueError, match="active Production"):
-        validate_interplant_destination("PLANT1", "OP1", "production", "PLANT2", "OP2", "repair", True, True)
-    with pytest.raises(ValueError, match="not configured"):
-        validate_interplant_destination("PLANT1", "OP1", "production", "PLANT2", "OP2", "production", True, False)
+        validate_interplant_destination("PLANT1", "OP1", "production", "PLANT2", "OP2", "repair", True)
+    with pytest.raises(ValueError, match="active Production"):
+        validate_interplant_destination("PLANT1", "OP1", "production", "PLANT2", "OP2", "production", False)
 
 
 def test_interplant_received_segment_is_unique_and_within_storage_limit() -> None:

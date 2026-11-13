@@ -139,8 +139,8 @@ class _InterPlantWipTransferDialogState
                 const Expanded(
                   child: Center(
                     child: Text(
-                      'No destination OP is configured for this product. '
-                      'Add an active Product Process Standard at another plant first.',
+                      'No active Production OP is available at another plant. '
+                      'Add or activate a Production Process for the destination plant first.',
                       textAlign: TextAlign.center,
                     ),
                   ),

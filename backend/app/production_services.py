@@ -103,9 +103,8 @@ def validate_interplant_destination(
     destination_process_code: str,
     destination_process_type: str,
     destination_process_active: bool,
-    has_product_process_standard: bool,
 ) -> None:
-    """Ensure a WIP move advances to an enabled OP configured for this product."""
+    """Ensure WIP moves to an active production OP at a different plant."""
     if source_process_type != "production":
         raise ValueError("Only production WIP can be transferred between plants")
     if not destination_process_active or destination_process_type != "production":
@@ -114,8 +113,6 @@ def validate_interplant_destination(
         raise ValueError("Destination Process must belong to another Plant")
     if destination_process_code == source_process_code:
         raise ValueError("Destination Process must differ from the current Process")
-    if not has_product_process_standard:
-        raise ValueError("Destination Process is not configured for this Product")
 
 
 def interplant_job_segment_code(source_segment: str, transfer_id: int) -> str:
