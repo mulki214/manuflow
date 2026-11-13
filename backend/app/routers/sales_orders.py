@@ -103,7 +103,12 @@ async def has_sales_order_downstream_activity(db: AsyncSession, order: SalesOrde
         exists(select(1).where(InvoiceItem.sales_order_number == order.sales_order_number)),
         exists(select(1).where(Delivery.sales_order_number == order.sales_order_number)),
         exists(select(1).where(DeliveryLine.sales_order_item_id.in_(item_ids))),
-        exists(select(1).where(FinishGoodReceipt.sales_order_number == order.sales_order_number)),
+        exists(
+            select(1)
+            .select_from(FinishGoodReceipt)
+            .join(WipLotJob, WipLotJob.id == FinishGoodReceipt.source_wip_job_id)
+            .where(WipLotJob.sales_order_item_id.in_(item_ids))
+        ),
         exists(select(1).where(WipLotJob.sales_order_item_id.in_(item_ids))),
         exists(select(1).where(Receiving.sales_order_item_id.in_(item_ids))),
         exists(select(1).where(WarehouseMaterialTransfer.sales_order_item_id.in_(item_ids))),

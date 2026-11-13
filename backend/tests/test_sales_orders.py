@@ -5,10 +5,12 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
+from sqlalchemy.dialects import postgresql
 
 from app.middleware import is_sales_order_path
 from app.models import AccessLevel, SalesOrderStatus
 from app.module_permissions import ensure_department_head, resolve_department_access
+from app.routers.sales_orders import has_sales_order_downstream_activity
 from app.sales_order_services import (
     bom_would_create_cycle,
     calculate_sales_line_amount,
@@ -99,6 +101,25 @@ def test_sales_head_can_delete_approved_order_only_before_downstream_activity() 
     assert sales_order_deletion_allowed(
         SalesOrderStatus.waiting_review, is_sales_head=False, has_downstream_activity=True
     )
+
+
+@pytest.mark.asyncio
+async def test_sales_order_downstream_check_follows_finish_good_wip_relation() -> None:
+    class ScalarCapture:
+        statement = None
+
+        async def scalar(self, statement):
+            self.statement = statement
+            return False
+
+    db = ScalarCapture()
+    order = SimpleNamespace(sales_order_number="SO-TEST")
+
+    assert not await has_sales_order_downstream_activity(db, order)
+    sql = str(db.statement.compile(dialect=postgresql.dialect()))
+    assert "finish_good_receipts" in sql
+    assert "source_wip_job_id" in sql
+    assert "finish_good_receipts.sales_order_number" not in sql
 
 
 def test_sales_order_validates_dates_and_unique_products() -> None:
