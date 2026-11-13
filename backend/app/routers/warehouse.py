@@ -47,6 +47,7 @@ from app.warehouse_services import (
     generate_transfer_number,
     move_quantity,
     quantity,
+    warehouse_wip_segment_code,
 )
 
 router = APIRouter(prefix="/warehouse", tags=["Warehouse"])
@@ -465,7 +466,7 @@ async def create_transfer(
                 process_code=process.code if process else None,
                 product_code=product.code,
                 lot_number=source_lot.lot_number,
-                lot_segment_code=f"{source_lot.lot_number}-{transfer_number}",
+                lot_segment_code=warehouse_wip_segment_code(source_lot.lot_number, transfer_number),
                 plant_code=plant.code,
                 unit=source_lot.unit,
                 input_quantity=moved,

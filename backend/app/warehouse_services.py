@@ -22,6 +22,20 @@ def format_transfer_number(transfer_date: date, sequence: int) -> str:
     return f"SM-{transfer_date:%d%m%y}-{sequence:03d}"
 
 
+def warehouse_wip_segment_code(lot_number: str, transfer_number: str) -> str:
+    """Build a unique WIP segment within its 40-char column limit.
+
+    The transfer number is unique and remains intact for traceability; only the
+    human-readable lot-number prefix is shortened when the combined value is
+    too long. The complete lot number is stored separately on the WIP job.
+    """
+    suffix = f"-{transfer_number}"
+    lot_prefix_length = 40 - len(suffix)
+    if lot_prefix_length < 0:
+        raise ValueError("Warehouse transfer number is too long for a WIP segment")
+    return f"{lot_number[:lot_prefix_length]}{suffix}"
+
+
 async def generate_transfer_number(db: AsyncSession, transfer_date: date | None = None) -> str:
     current_date = transfer_date or datetime.now(ZoneInfo(settings.business_timezone)).date()
     statement = (
