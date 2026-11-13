@@ -1593,6 +1593,8 @@ class Receiving(Base):
     sales_order_item_id: Mapped[int | None] = mapped_column(
         ForeignKey("sales_order_items.id", ondelete="RESTRICT"), nullable=True, index=True
     )
+    # Historical identifier retained when a reversed receipt is detached from a deleted SO item.
+    sales_order_number: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
     material_allocation_id: Mapped[int | None] = mapped_column(
         ForeignKey("sales_order_material_allocations.id", ondelete="RESTRICT"), nullable=True, index=True
     )

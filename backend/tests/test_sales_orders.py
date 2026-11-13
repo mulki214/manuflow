@@ -8,9 +8,9 @@ from pydantic import ValidationError
 from sqlalchemy.dialects import postgresql
 
 from app.middleware import is_sales_order_path
-from app.models import AccessLevel, SalesOrderStatus
+from app.models import AccessLevel, ReceivingStatus, SalesOrderStatus
 from app.module_permissions import ensure_department_head, resolve_department_access
-from app.routers.sales_orders import has_sales_order_downstream_activity
+from app.routers.sales_orders import detach_reversed_receiving_history, has_sales_order_downstream_activity
 from app.sales_order_services import (
     bom_would_create_cycle,
     calculate_sales_line_amount,
@@ -122,6 +122,31 @@ async def test_sales_order_downstream_check_follows_finish_good_wip_relation() -
     assert "finish_good_receipts.sales_order_number" not in sql
     assert "receivings.status" in sql
     assert "posted" in str(db.statement.compile(dialect=postgresql.dialect()).params.values())
+
+
+@pytest.mark.asyncio
+async def test_deleting_sales_order_detaches_only_reversed_receipt_history() -> None:
+    class ExecuteCapture:
+        statement = None
+
+        async def execute(self, statement):
+            self.statement = statement
+
+    db = ExecuteCapture()
+    order = SimpleNamespace(
+        sales_order_number="SO-TEST",
+        items=[SimpleNamespace(id=123)],
+    )
+
+    await detach_reversed_receiving_history(db, order)
+
+    compiled = db.statement.compile(dialect=postgresql.dialect())
+    sql = str(compiled)
+    assert "receivings.status" in sql
+    assert "sales_order_item_id" in sql
+    assert "sales_order_number" in sql
+    assert "material_allocation_id" in sql
+    assert ReceivingStatus.reversed.value in str(compiled.params.values())
 
 
 def test_sales_order_validates_dates_and_unique_products() -> None:

@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -140,6 +140,25 @@ async def can_delete_sales_order(
     has_activity = await has_sales_order_downstream_activity(db, order)
     return sales_order_deletion_allowed(
         order.status, is_sales_head=access.is_head, has_downstream_activity=has_activity
+    )
+
+
+async def detach_reversed_receiving_history(db: AsyncSession, order: SalesOrder) -> None:
+    """Preserve reversed receipts while removing their restrictive SO item links."""
+    item_ids = [item.id for item in order.items]
+    if not item_ids:
+        return
+    await db.execute(
+        update(Receiving)
+        .where(
+            Receiving.sales_order_item_id.in_(item_ids),
+            Receiving.status == ReceivingStatus.reversed,
+        )
+        .values(
+            sales_order_item_id=None,
+            sales_order_number=order.sales_order_number,
+            material_allocation_id=None,
+        )
     )
 
 
@@ -691,6 +710,9 @@ async def delete_sales_order(
                     "production, delivery, invoice, or other downstream transaction already exists."
                 ),
             )
+    # Keep reversed receipt history while clearing restrictive links to SO items
+    # and their BOM allocations so the otherwise-unused SO can be deleted.
+    await detach_reversed_receiving_history(db, order)
     await db.delete(order)
     try:
         await db.commit()
