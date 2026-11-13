@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -22,16 +22,23 @@ from app.models import (
     FinishGoodReceipt,
     FinishGoodStatus,
     FulfillmentStatus,
+    Invoice,
+    InvoiceItem,
     OrderRevision,
     Product,
     ProductCategory,
+    PurchaseOrder,
     PurchaseOrderItem,
+    PurchaseRequest,
+    PurchaseRequestItem,
+    Receiving,
     SalesOrder,
     SalesOrderItem,
     SalesOrderMaterialAllocation,
     SalesOrderStatus,
     SalesOrderType,
     User,
+    WarehouseMaterialTransfer,
     WipLotJob,
     WipLotStatus,
 )
@@ -48,6 +55,7 @@ from app.sales_order_services import (
     ensure_sales_waiting_review,
     expand_bom_leaf_requirements,
     generate_sales_order_number,
+    sales_order_deletion_allowed,
 )
 from app.schemas import (
     OrderRevisionResponse,
@@ -81,6 +89,47 @@ async def get_order(db: AsyncSession, sales_order_number: str, *, for_update: bo
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sales order not found")
     return order
+
+
+async def has_sales_order_downstream_activity(db: AsyncSession, order: SalesOrder) -> bool:
+    """Return whether downstream records still depend on this SO or its items."""
+    item_ids = select(SalesOrderItem.id).where(SalesOrderItem.sales_order_number == order.sales_order_number)
+    checks = (
+        exists(select(1).where(PurchaseOrder.sales_order_number == order.sales_order_number)),
+        exists(select(1).where(PurchaseOrderItem.sales_order_item_id.in_(item_ids))),
+        exists(select(1).where(PurchaseRequest.sales_order_number == order.sales_order_number)),
+        exists(select(1).where(PurchaseRequestItem.sales_order_item_id.in_(item_ids))),
+        exists(select(1).where(Invoice.sales_order_number == order.sales_order_number)),
+        exists(select(1).where(InvoiceItem.sales_order_number == order.sales_order_number)),
+        exists(select(1).where(Delivery.sales_order_number == order.sales_order_number)),
+        exists(select(1).where(DeliveryLine.sales_order_item_id.in_(item_ids))),
+        exists(select(1).where(FinishGoodReceipt.sales_order_number == order.sales_order_number)),
+        exists(select(1).where(WipLotJob.sales_order_item_id.in_(item_ids))),
+        exists(select(1).where(Receiving.sales_order_item_id.in_(item_ids))),
+        exists(select(1).where(WarehouseMaterialTransfer.sales_order_item_id.in_(item_ids))),
+        exists(
+            select(1).where(
+                SalesOrderMaterialAllocation.sales_order_item_id.in_(item_ids),
+                SalesOrderMaterialAllocation.received_quantity > 0,
+            )
+        ),
+    )
+    return bool(await db.scalar(select(or_(*checks))))
+
+
+async def can_delete_sales_order(
+    db: AsyncSession, order: SalesOrder, access: DepartmentModuleAccess
+) -> bool:
+    if order.status == SalesOrderStatus.waiting_review:
+        return sales_order_deletion_allowed(
+            order.status, is_sales_head=access.is_head, has_downstream_activity=False
+        )
+    if not access.is_head or order.status not in {SalesOrderStatus.approved, SalesOrderStatus.rejected}:
+        return False
+    has_activity = await has_sales_order_downstream_activity(db, order)
+    return sales_order_deletion_allowed(
+        order.status, is_sales_head=access.is_head, has_downstream_activity=has_activity
+    )
 
 
 async def order_response(db: AsyncSession, order: SalesOrder, access: DepartmentModuleAccess) -> SalesOrderResponse:
@@ -172,6 +221,7 @@ async def order_response(db: AsyncSession, order: SalesOrder, access: Department
         )
         for item in order.items
     ]
+    deletable = await can_delete_sales_order(db, order, access)
     return SalesOrderResponse(
         sales_order_number=order.sales_order_number,
         po_receipt_date=order.po_receipt_date,
@@ -201,7 +251,7 @@ async def order_response(db: AsyncSession, order: SalesOrder, access: Department
         reviewed_at=order.reviewed_at,
         rejection_reason=order.rejection_reason,
         can_edit=order.status != SalesOrderStatus.rejected,
-        can_delete=waiting,
+        can_delete=deletable,
         can_review=waiting and access.can_review,
         creator_qr_payload=signed_document_payload(
             "sales_order", order.sales_order_number, "created", order.created_by, creator_name, order.created_at
@@ -609,11 +659,36 @@ async def delete_sales_order(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    await current_access(db, current_user)
-    order = await get_order(db, sales_order_number)
-    ensure_sales_waiting_review(order.status)
+    access = await current_access(db, current_user)
+    order = await get_order(db, sales_order_number, for_update=True)
+    if order.status != SalesOrderStatus.waiting_review:
+        if not access.is_head:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the Sales Head can delete an approved or rejected Sales Order",
+            )
+        has_activity = await has_sales_order_downstream_activity(db, order)
+        if not sales_order_deletion_allowed(
+            order.status, is_sales_head=access.is_head, has_downstream_activity=has_activity
+        ):
+            if order.status not in {SalesOrderStatus.approved, SalesOrderStatus.rejected}:
+                ensure_sales_waiting_review(order.status)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "This Sales Order cannot be deleted because a Purchase Order, stock receipt, "
+                    "production, delivery, invoice, or other downstream transaction already exists."
+                ),
+            )
     await db.delete(order)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This Sales Order is linked to another transaction and cannot be deleted.",
+        ) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
