@@ -32,6 +32,7 @@ from app.models import (
     PurchaseRequest,
     PurchaseRequestItem,
     Receiving,
+    ReceivingStatus,
     SalesOrder,
     SalesOrderItem,
     SalesOrderMaterialAllocation,
@@ -110,7 +111,12 @@ async def has_sales_order_downstream_activity(db: AsyncSession, order: SalesOrde
             .where(WipLotJob.sales_order_item_id.in_(item_ids))
         ),
         exists(select(1).where(WipLotJob.sales_order_item_id.in_(item_ids))),
-        exists(select(1).where(Receiving.sales_order_item_id.in_(item_ids))),
+        exists(
+            select(1).where(
+                Receiving.sales_order_item_id.in_(item_ids),
+                Receiving.status == ReceivingStatus.posted,
+            )
+        ),
         exists(select(1).where(WarehouseMaterialTransfer.sales_order_item_id.in_(item_ids))),
         exists(
             select(1).where(

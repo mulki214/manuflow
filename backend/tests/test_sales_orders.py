@@ -120,6 +120,8 @@ async def test_sales_order_downstream_check_follows_finish_good_wip_relation() -
     assert "finish_good_receipts" in sql
     assert "source_wip_job_id" in sql
     assert "finish_good_receipts.sales_order_number" not in sql
+    assert "receivings.status" in sql
+    assert "posted" in str(db.statement.compile(dialect=postgresql.dialect()).params.values())
 
 
 def test_sales_order_validates_dates_and_unique_products() -> None:
