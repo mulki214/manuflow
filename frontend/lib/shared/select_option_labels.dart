@@ -31,6 +31,7 @@ String orderItemSelectLabel(
   Map<String, dynamic> item, {
   required String quantity,
 }) => _join([
+  _text(item['internal_document_number']),
   _text(item['document_number']),
   _text(item['product_name'] ?? item['part_name'] ?? item['product_code']),
   _text(item['product_description'] ?? item['description']),
