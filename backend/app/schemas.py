@@ -1089,6 +1089,7 @@ class ReceivingSourceItemResponse(BaseModel):
     source_code: str
     source_name: str
     document_number: str
+    internal_document_number: str | None = None
     item_id: int
     subcontract_dispatch_id: int | None = None
     product_code: str
