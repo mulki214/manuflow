@@ -9,6 +9,7 @@ import '../../shared/crud_widgets.dart';
 import '../../shared/module_navigation.dart';
 import '../../shared/modal_widgets.dart';
 import '../../shared/product_qr_label_dialog.dart';
+import '../../shared/searchable_select_field.dart';
 import 'master_data_form_dialog.dart';
 import 'product_bom_dialog.dart';
 import 'master_data_models.dart';
@@ -26,6 +27,8 @@ class _MasterDataPageState extends State<MasterDataPage>
   late final TabController _tabs;
   final _search = TextEditingController();
   List<MasterDataRecord> _records = [];
+  List<Map<String, dynamic>> _customers = [];
+  String? _customerCode;
   bool _loading = true;
   String? _error;
   int _page = 1;
@@ -47,9 +50,13 @@ class _MasterDataPageState extends State<MasterDataPage>
       if (!_tabs.indexIsChanging) {
         setState(() {
           _search.clear();
+          _customerCode = null;
           _page = 1;
         });
-        if (!_isUserTab) _load();
+        if (!_isUserTab) {
+          if (_type == MasterDataType.product) _loadCustomers();
+          _load();
+        }
       }
     });
     _load();
@@ -72,6 +79,8 @@ class _MasterDataPageState extends State<MasterDataPage>
       'page=$_page',
       'size=$_size',
       if (search.isNotEmpty) 'search=${Uri.encodeQueryComponent(search)}',
+      if (_type == MasterDataType.product && _customerCode != null)
+        'customer_code=${Uri.encodeQueryComponent(_customerCode!)}',
     ].join('&');
     try {
       final response = await widget.auth.api.getJson(
@@ -99,6 +108,53 @@ class _MasterDataPageState extends State<MasterDataPage>
       if (mounted) setState(() => _loading = false);
     }
   }
+
+  Future<void> _loadCustomers() async {
+    try {
+      final response = await widget.auth.api.getJson(
+        '/master-data/corporations?page=1&size=100&customer_only=true',
+      );
+      if (!mounted) return;
+      setState(() {
+        _customers = (response['items'] as List).cast<Map<String, dynamic>>();
+      });
+    } on ApiException {
+      // Product search remains usable if the optional customer lookup fails.
+    }
+  }
+
+  Widget _customerFilter() => SizedBox(
+    width: 280,
+    child: SearchableSelectField<String?>(
+      value: _customerCode,
+      labelText: 'Customer',
+      allowClear: true,
+      searchHint: 'Search customer name or code',
+      options: [
+        const SearchableSelectOption<String?>(
+          value: null,
+          label: 'All Customers',
+        ),
+        ..._customers.map(
+          (customer) => SearchableSelectOption<String?>(
+            value: customer['code'].toString(),
+            label: '${customer['name']} (${customer['code']})',
+            searchTerms: [
+              customer['name'].toString(),
+              customer['code'].toString(),
+            ],
+          ),
+        ),
+      ],
+      onChanged: (value) {
+        setState(() {
+          _customerCode = value;
+          _page = 1;
+        });
+        _load();
+      },
+    ),
+  );
 
   Future<void> _openForm([MasterDataRecord? record]) async {
     final changed = await showDialog<bool>(
@@ -466,32 +522,45 @@ class _MasterDataPageState extends State<MasterDataPage>
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(14),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _search,
-                          onSubmitted: (_) {
-                            _page = 1;
-                            _load();
-                          },
-                          decoration: InputDecoration(
-                            hintText:
-                                'Filter ${_type.label} by name or code...',
-                            prefixIcon: const Icon(Icons.search),
-                            isDense: true,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final wide = constraints.maxWidth >= 720;
+                      return Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: wide ? 420 : constraints.maxWidth,
+                            child: TextField(
+                              controller: _search,
+                              onSubmitted: (_) {
+                                _page = 1;
+                                _load();
+                              },
+                              decoration: InputDecoration(
+                                hintText:
+                                    'Filter ${_type.label} by name or code...',
+                                prefixIcon: const Icon(Icons.search),
+                                isDense: true,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton.filledTonal(
-                        onPressed: () {
-                          _page = 1;
-                          _load();
-                        },
-                        icon: const Icon(Icons.search),
-                      ),
-                    ],
+                          if (_type == MasterDataType.product)
+                            SizedBox(
+                              width: wide ? 280 : constraints.maxWidth,
+                              child: _customerFilter(),
+                            ),
+                          IconButton.filledTonal(
+                            onPressed: () {
+                              _page = 1;
+                              _load();
+                            },
+                            icon: const Icon(Icons.search),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
               ),
