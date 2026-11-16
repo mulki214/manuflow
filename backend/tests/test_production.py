@@ -4,6 +4,7 @@ from decimal import Decimal
 import pytest
 from fastapi import HTTPException
 
+from app.document_services import interplant_wip_delivery_note_pdf_bytes
 from app.middleware import is_production_path
 from app.models import WipLotStatus, WipProcessType
 from app.production_services import (
@@ -18,6 +19,7 @@ from app.production_services import (
     validate_interplant_destination,
 )
 from app.routers.production import ensure_production_process_type
+from app.routers.production import router as production_router
 from app.schemas import ProductProcessStandardCreate
 
 
@@ -36,6 +38,44 @@ def test_production_rejects_quality_process_type() -> None:
     with pytest.raises(HTTPException) as error:
         ensure_production_process_type(WipProcessType.quality)
     assert error.value.status_code == 422
+
+
+def test_interplant_transfer_pdf_route_is_available() -> None:
+    routes = {(route.path, method) for route in production_router.routes for method in getattr(route, "methods", set())}
+    assert ("/production/inter-plant-transfers/{transfer_id}/pdf", "GET") in routes
+
+
+def test_interplant_delivery_note_pdf_supports_optional_customer_po() -> None:
+    from types import SimpleNamespace
+
+    document = interplant_wip_delivery_note_pdf_bytes(
+        SimpleNamespace(
+            transfer_number="IPW-131126-0001",
+            transfer_date=date(2026, 11, 13),
+            customer_po_number="CPO-2026-001",
+            product_code="B001",
+            product_name="Part B",
+            description="Long product description",
+            lot_number="LOT-1",
+            lot_segment_code="LOT-1-01",
+            quantity=Decimal("10"),
+            unit="pcs",
+            source_plant_code="DS6",
+            source_plant_name="Plant DS6",
+            source_process_code="OP1",
+            source_process_name="Process 1",
+            destination_plant_code="MDS",
+            destination_plant_name="Plant MDS",
+            destination_process_code="OP3",
+            destination_process_name="Process 3",
+            status_label="In Transit",
+            dispatched_by_name="Sender",
+            received_by_name=None,
+            notes="Careful handling",
+        )
+    )
+    assert document.startswith(b"%PDF")
+    assert len(document) > 1000
 
 
 def test_production_execution_conserves_partial_outcomes() -> None:

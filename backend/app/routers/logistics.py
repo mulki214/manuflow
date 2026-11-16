@@ -789,6 +789,7 @@ async def download_delivery_note_pdf(
         sales_order_number=record.sales_order_number,
         customer_name=record.customer_name,
         ship_to_name=order.ship_to_name,
+        customer_po_number=order.customer_po_number,
         ship_to_address=order.ship_to_address,
         ship_to_contact=f"{order.ship_to_contact_person} — {order.ship_to_phone}",
         vehicle_number=record.vehicle_number,

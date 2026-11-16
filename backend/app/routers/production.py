@@ -1,7 +1,8 @@
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from types import SimpleNamespace
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.dependencies import get_current_user
+from app.document_services import interplant_wip_delivery_note_pdf_bytes
 from app.models import (
     AccessLevel,
     BillOfMaterial,
@@ -29,6 +31,8 @@ from app.models import (
     QualityInspection,
     RepairRoute,
     RepairRouteStep,
+    SalesOrder,
+    SalesOrderItem,
     StorageLocation,
     User,
     WipLotJob,
@@ -749,6 +753,58 @@ async def receive_interplant_wip(
     await db.commit()
     await db.refresh(transfer)
     return interplant_transfer_response(transfer)
+
+
+@router.get("/inter-plant-transfers/{transfer_id}/pdf")
+async def download_interplant_transfer_pdf(
+    transfer_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    await current_access(db, current_user)
+    transfer = await db.get(InterPlantWipTransfer, transfer_id)
+    if not transfer:
+        raise HTTPException(status_code=404, detail="Inter-Plant WIP Transfer not found")
+
+    source_job = await db.get(WipLotJob, transfer.source_job_id)
+    sales_item = (
+        await db.get(SalesOrderItem, source_job.sales_order_item_id)
+        if source_job and source_job.sales_order_item_id
+        else None
+    )
+    sales_order = await db.get(SalesOrder, sales_item.sales_order_number) if sales_item else None
+    payload = SimpleNamespace(
+        transfer_number=interplant_transfer_number(transfer),
+        transfer_date=transfer.transfer_date,
+        customer_po_number=sales_order.customer_po_number if sales_order else None,
+        product_code=transfer.product_code,
+        product_name=transfer.product_name,
+        description=transfer.description,
+        lot_number=transfer.lot_number,
+        lot_segment_code=transfer.lot_segment_code,
+        quantity=transfer.quantity,
+        unit=transfer.unit,
+        source_plant_code=transfer.source_plant_code,
+        source_plant_name=transfer.source_plant_name,
+        source_process_code=transfer.source_process_code,
+        source_process_name=transfer.source_process_name,
+        destination_plant_code=transfer.destination_plant_code,
+        destination_plant_name=transfer.destination_plant_name,
+        destination_process_code=transfer.destination_process_code,
+        destination_process_name=transfer.destination_process_name,
+        status_label=transfer.status.value.replace("_", " ").title(),
+        dispatched_by_name=transfer.dispatched_by_name,
+        received_by_name=transfer.received_by_name,
+        notes=transfer.notes,
+    )
+    content = interplant_wip_delivery_note_pdf_bytes(payload)
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="inter-plant-delivery-note-{payload.transfer_number}.pdf"'
+        },
+    )
 
 
 @router.get("/executions", response_model=PaginatedProductionExecutions)
