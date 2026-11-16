@@ -801,15 +801,16 @@ def delivery_note_pdf_bytes(delivery: Any) -> bytes:
                     "Sales Order",
                     delivery.sales_order_number,
                 ],
-                ["Customer", delivery.customer_name, "Ship To", delivery.ship_to_name],
+                ["Customer PO", delivery.customer_po_number or "-", "Customer", delivery.customer_name],
+                ["Ship To", delivery.ship_to_name, "Contact", delivery.ship_to_contact],
                 [
                     "Address",
                     delivery.ship_to_address,
-                    "Contact",
-                    delivery.ship_to_contact,
+                    "Vehicle",
+                    delivery.vehicle_number or "-",
                 ],
-                ["Vehicle", delivery.vehicle_number or "-", "Transportation", delivery.transportation_name or "-"],
-                ["Driver", delivery.driver_name or "-", "Status", delivery.status_label],
+                ["Transportation", delivery.transportation_name or "-", "Driver", delivery.driver_name or "-"],
+                ["Status", delivery.status_label, "", ""],
             ],
             [28 * mm, 55 * mm, 35 * mm, 60 * mm],
             cell,
@@ -861,6 +862,96 @@ def delivery_note_pdf_bytes(delivery: Any) -> bytes:
                     ],
                 ],
                 colWidths=[55 * mm, 55 * mm, 55 * mm],
+                hAlign="CENTER",
+                style=[("GRID", (0, 0), (-1, -1), 0.3, colors.grey), ("VALIGN", (0, 0), (-1, -1), "MIDDLE")],
+            ),
+        ]
+    )
+    document.build(story)
+    return stream.getvalue()
+
+
+def interplant_wip_delivery_note_pdf_bytes(transfer: Any) -> bytes:
+    """Render a WIP plant-transfer note with optional customer PO reference."""
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table
+
+    stream = BytesIO()
+    document = SimpleDocTemplate(
+        stream,
+        pagesize=A4,
+        rightMargin=14 * mm,
+        leftMargin=14 * mm,
+        topMargin=12 * mm,
+        bottomMargin=12 * mm,
+        title=f"Inter-Plant Delivery Note {transfer.transfer_number}",
+    )
+    styles = getSampleStyleSheet()
+    cell, label, header, _ = _pdf_styles(styles)
+    center = ParagraphStyle("interplant-center", parent=styles["Normal"], alignment=TA_CENTER)
+    story = [
+        Paragraph("<b>INTER-PLANT DELIVERY NOTE</b>", styles["Title"]),
+        Paragraph(f"<b>{transfer.transfer_number}</b>", center),
+        Spacer(1, 5 * mm),
+        _pdf_table(
+            document,
+            [
+                [
+                    "Transfer Date",
+                    transfer.transfer_date.strftime("%d/%m/%Y"),
+                    "Customer PO",
+                    transfer.customer_po_number or "-",
+                ],
+                ["Product", transfer.product_name, "Product Code", transfer.product_code],
+                [
+                    "Description",
+                    transfer.description or "-",
+                    "Lot / Segment",
+                    f"{transfer.lot_number} / {transfer.lot_segment_code}",
+                ],
+                [
+                    "From Plant / OP",
+                    f"{transfer.source_plant_code} — {transfer.source_plant_name} / "
+                    f"{transfer.source_process_code} — {transfer.source_process_name}",
+                    "To Plant / OP",
+                    f"{transfer.destination_plant_code} — {transfer.destination_plant_name} / "
+                    f"{transfer.destination_process_code} — {transfer.destination_process_name}",
+                ],
+                [
+                    "Status",
+                    transfer.status_label,
+                    "Quantity",
+                    f"{format_document_quantity(transfer.quantity, transfer.unit)} {transfer.unit}",
+                ],
+                ["Dispatched By", transfer.dispatched_by_name, "Received By", transfer.received_by_name or "-"],
+            ],
+            [28 * mm, 55 * mm, 28 * mm, 67 * mm],
+            cell,
+            label_style=label,
+            metadata=True,
+        ),
+    ]
+    if transfer.notes:
+        story.extend(
+            [Spacer(1, 4 * mm), Paragraph("<b>Notes:</b>", styles["Heading4"]), _pdf_text(transfer.notes, cell)]
+        )
+    story.extend(
+        [
+            Spacer(1, 10 * mm),
+            Table(
+                [
+                    [Paragraph("<b>Dispatched By</b>", center), Paragraph("<b>Received By</b>", center)],
+                    ["\n\n\n\n", "\n\n\n\n"],
+                    [
+                        Paragraph(transfer.dispatched_by_name, center),
+                        Paragraph(transfer.received_by_name or "Name / Signature / Date", center),
+                    ],
+                ],
+                colWidths=[82.5 * mm, 82.5 * mm],
                 hAlign="CENTER",
                 style=[("GRID", (0, 0), (-1, -1), 0.3, colors.grey), ("VALIGN", (0, 0), (-1, -1), "MIDDLE")],
             ),

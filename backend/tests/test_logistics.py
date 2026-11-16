@@ -180,6 +180,7 @@ def test_delivery_note_pdf_contains_a_delivery_document() -> None:
             delivery_number="DLV-210826-000",
             delivery_date=date(2026, 8, 21),
             sales_order_number="SO-001",
+            customer_po_number="CPO-2026-001",
             customer_name="Customer A",
             ship_to_name="Customer Warehouse",
             ship_to_address="Industrial Estate",
@@ -203,6 +204,31 @@ def test_delivery_note_pdf_contains_a_delivery_document() -> None:
     )
     assert document.startswith(b"%PDF")
     assert len(document) > 1000
+
+
+def test_delivery_note_pdf_accepts_missing_customer_po_reference() -> None:
+    from types import SimpleNamespace
+
+    document = delivery_note_pdf_bytes(
+        SimpleNamespace(
+            delivery_number="DLV-210826-001",
+            delivery_date=date(2026, 8, 21),
+            sales_order_number="SO-001",
+            customer_po_number=None,
+            customer_name="Customer A",
+            ship_to_name="Customer Warehouse",
+            ship_to_address="Industrial Estate",
+            ship_to_contact="Receiver",
+            vehicle_number=None,
+            transportation_name=None,
+            driver_name=None,
+            status_label="Dispatched",
+            notes="",
+            prepared_by_name="Warehouse Staff",
+            lines=[],
+        )
+    )
+    assert document.startswith(b"%PDF")
 
 
 def test_delivery_batch_accepts_an_excess_reason() -> None:

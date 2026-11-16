@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:file_saver/file_saver.dart';
 
 import '../../core/api_client.dart';
 import '../../shared/app_sidebar.dart';
@@ -225,6 +226,28 @@ class _WipProductionPageState extends State<WipProductionPage> {
           ),
         );
       }
+    } on ApiException catch (exception) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(exception.message)));
+      }
+    }
+  }
+
+  Future<void> _downloadInterPlantNote(
+    InterPlantWipTransferModel transfer,
+  ) async {
+    try {
+      final bytes = await widget.auth.api.getBytes(
+        '/production/inter-plant-transfers/${transfer.id}/pdf',
+      );
+      await FileSaver.instance.saveFile(
+        name: 'inter-plant-delivery-note-${transfer.number}',
+        bytes: bytes,
+        fileExtension: 'pdf',
+        mimeType: MimeType.pdf,
+      );
     } on ApiException catch (exception) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -1036,12 +1059,22 @@ class _WipProductionPageState extends State<WipProductionPage> {
                   ),
                   DataCell(_transferStatus(transfer.status)),
                   DataCell(
-                    transfer.canReceive
-                        ? FilledButton(
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () => _downloadInterPlantNote(transfer),
+                          icon: const Icon(Icons.picture_as_pdf_outlined),
+                          label: const Text('Delivery Note'),
+                        ),
+                        if (transfer.canReceive)
+                          FilledButton(
                             onPressed: () => _receiveInterPlant(transfer),
                             child: const Text('Receive'),
-                          )
-                        : const Text('-'),
+                          ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -1136,17 +1169,24 @@ class _WipProductionPageState extends State<WipProductionPage> {
                   'Dispatched ${_date(transfer.date)} by ${transfer.dispatchedByName}'
                   '${transfer.receivedByName == null ? '' : '\nReceived by ${transfer.receivedByName}'}',
                 ),
-                if (transfer.canReceive) ...[
-                  const SizedBox(height: 10),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: FilledButton.icon(
-                      onPressed: () => _receiveInterPlant(transfer),
-                      icon: const Icon(Icons.move_to_inbox_outlined),
-                      label: const Text('Receive WIP'),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.end,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () => _downloadInterPlantNote(transfer),
+                      icon: const Icon(Icons.picture_as_pdf_outlined),
+                      label: const Text('Delivery Note'),
                     ),
-                  ),
-                ],
+                    if (transfer.canReceive)
+                      FilledButton.icon(
+                        onPressed: () => _receiveInterPlant(transfer),
+                        icon: const Icon(Icons.move_to_inbox_outlined),
+                        label: const Text('Receive WIP'),
+                      ),
+                  ],
+                ),
               ],
             ),
           ),
