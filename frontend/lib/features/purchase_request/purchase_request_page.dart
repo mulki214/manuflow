@@ -224,7 +224,7 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                               '${p['request_number']} — ${p['created_by_name']}',
                             ),
                             subtitle: Text(
-                              '${p['status']} • SO ${p['sales_order_number'] ?? '-'} • ${(p['items'] as List).length} product(s)\n${(p['items'] as List).map((item) => '${item['product_code']} — ${item['description']}').join('\n')}',
+                              '${p['status']} • ${p['request_type'] == 'free_text' ? 'Free-text' : 'Master Data'} • SO ${p['sales_order_number'] ?? '-'} • ${(p['items'] as List).length} product(s)\n${(p['items'] as List).map((item) => '${item['product_code'] ?? item['part_name']} — ${item['description']}').join('\n')}',
                             ),
                             isThreeLine: true,
                             trailing: Row(
@@ -297,6 +297,7 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
     final notes = TextEditingController(
       text: existing?['notes']?.toString() ?? '',
     );
+    var requestType = existing?['request_type']?.toString() ?? 'master_data';
     String? plantCode = existing?['delivery_plant_code']?.toString();
     String? salesOrderNumber = existing?['sales_order_number']?.toString();
     var requestedDeliveryDate =
@@ -320,32 +321,70 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SearchableSelectField<String>(
-                    value: salesOrderNumber,
-                    labelText: 'Sales Order *',
-                    searchHint: 'Search SO or customer',
-                    options: _salesOrders
-                        .map(
-                          (order) => SearchableSelectOption(
-                            value: order['sales_order_number'].toString(),
-                            label:
-                                '${order['sales_order_number']} — ${order['customer_name']}',
-                            searchTerms: [
-                              order['sales_order_number'].toString(),
-                              order['customer_po_number']?.toString() ?? '',
-                              order['customer_name']?.toString() ?? '',
-                            ],
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) => setDialogState(() {
-                      salesOrderNumber = value;
-                      for (final line in lines) {
-                        line.clearProduct();
-                      }
-                    }),
-                    validator: (value) => value == null ? 'Required' : null,
-                  ),
+                  if (existing == null)
+                    SearchableSelectField<String>(
+                      value: requestType,
+                      labelText: 'Product Source *',
+                      searchHint: 'Select product source',
+                      options: const [
+                        SearchableSelectOption(
+                          value: 'master_data',
+                          label: 'Master Data Product',
+                        ),
+                        SearchableSelectOption(
+                          value: 'free_text',
+                          label: 'Free-text Product',
+                        ),
+                      ],
+                      onChanged: (value) => setDialogState(() {
+                        if (value == null) return;
+                        requestType = value;
+                        salesOrderNumber = null;
+                        for (final line in lines) {
+                          line.clearProduct();
+                        }
+                      }),
+                    )
+                  else
+                    InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Request Type',
+                      ),
+                      child: Text(
+                        requestType == 'free_text'
+                            ? 'Free-text Product'
+                            : 'Master Data Product',
+                      ),
+                    ),
+                  if (requestType == 'master_data') ...[
+                    const SizedBox(height: 12),
+                    SearchableSelectField<String>(
+                      value: salesOrderNumber,
+                      labelText: 'Sales Order *',
+                      searchHint: 'Search SO or customer',
+                      options: _salesOrders
+                          .map(
+                            (order) => SearchableSelectOption(
+                              value: order['sales_order_number'].toString(),
+                              label:
+                                  '${order['sales_order_number']} — ${order['customer_name']}',
+                              searchTerms: [
+                                order['sales_order_number'].toString(),
+                                order['customer_po_number']?.toString() ?? '',
+                                order['customer_name']?.toString() ?? '',
+                              ],
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) => setDialogState(() {
+                        salesOrderNumber = value;
+                        for (final line in lines) {
+                          line.clearProduct();
+                        }
+                      }),
+                      validator: (value) => value == null ? 'Required' : null,
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   SearchableSelectField<String>(
                     value: plantCode,
@@ -395,6 +434,7 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                       key: ObjectKey(lines[index]),
                       index: index,
                       line: lines[index],
+                      freeText: requestType == 'free_text',
                       candidates: _candidatesForSalesOrder(
                         salesOrderNumber,
                         lines,
@@ -402,6 +442,9 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                       onChanged: (candidate) => setDialogState(() {
                         final line = lines[index];
                         line.selectCandidate(candidate);
+                      }),
+                      onUnitChanged: (unit) => setDialogState(() {
+                        lines[index].unit = unit;
                       }),
                       canRemove: lines.length > 1,
                       onRemove: () => setDialogState(() {
@@ -438,18 +481,22 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
             FilledButton(
               onPressed: () async {
                 if (plantCode == null ||
-                    salesOrderNumber == null ||
+                    (requestType == 'master_data' &&
+                        salesOrderNumber == null) ||
                     lines.any(
                       (line) =>
-                          line.productCode == null ||
-                          line.salesOrderItemId == null ||
+                          (requestType == 'master_data' &&
+                              (line.productCode == null ||
+                                  line.salesOrderItemId == null)) ||
+                          (requestType == 'free_text' &&
+                              line.productNameController.text.trim().isEmpty) ||
                           line.quantity.text.trim().isEmpty ||
                           line.unit == null,
                     )) {
                   ScaffoldMessenger.of(x).showSnackBar(
                     const SnackBar(
                       content: Text(
-                        'Select an SO, product, quantity, and unit for every line',
+                        'Complete the required product, quantity, and unit fields for every line',
                       ),
                     ),
                   );
@@ -461,17 +508,33 @@ class _PurchaseRequestPageState extends State<PurchaseRequestPage> {
                       0,
                       10,
                     ),
+                    'request_type': requestType,
                     'requested_delivery_date': requestedDeliveryDate
                         .toIso8601String()
                         .substring(0, 10),
-                    'sales_order_number': salesOrderNumber,
+                    'sales_order_number': requestType == 'master_data'
+                        ? salesOrderNumber
+                        : null,
                     'delivery_plant_code': plantCode,
                     'notes': notes.text,
                     'items': [
                       for (final line in lines)
                         {
-                          'product_code': line.productCode,
-                          'sales_order_item_id': line.salesOrderItemId,
+                          'product_code': requestType == 'master_data'
+                              ? line.productCode
+                              : null,
+                          'sales_order_item_id': requestType == 'master_data'
+                              ? line.salesOrderItemId
+                              : null,
+                          'part_name': requestType == 'free_text'
+                              ? line.productNameController.text.trim()
+                              : null,
+                          'part_no': requestType == 'free_text'
+                              ? line.partNoController.text.trim()
+                              : null,
+                          'description': requestType == 'free_text'
+                              ? line.descriptionController.text.trim()
+                              : line.description ?? '',
                           'quantity': line.quantity.text.trim(),
                           'unit': line.unit,
                           'remark': line.remark.text.trim(),
@@ -551,16 +614,18 @@ class _PurchaseRequestApprovalLine {
   }) : approvedQuantity = TextEditingController(text: requestedQuantity),
        reason = TextEditingController();
 
-  factory _PurchaseRequestApprovalLine.fromJson(Map<String, dynamic> json) =>
-      _PurchaseRequestApprovalLine(
-        itemId: json['id'] as int,
-        productLabel: '${json['product_code']} — ${json['description']}',
-        requestedQuantity: formatQuantity(
-          json['quantity'],
-          json['unit']?.toString() ?? 'pcs',
-        ),
-        unit: json['unit']?.toString() ?? 'pcs',
-      );
+  factory _PurchaseRequestApprovalLine.fromJson(
+    Map<String, dynamic> json,
+  ) => _PurchaseRequestApprovalLine(
+    itemId: json['id'] as int,
+    productLabel:
+        '${json['product_code'] ?? json['part_name']} — ${json['description']}',
+    requestedQuantity: formatQuantity(
+      json['quantity'],
+      json['unit']?.toString() ?? 'pcs',
+    ),
+    unit: json['unit']?.toString() ?? 'pcs',
+  );
 
   final int itemId;
   final String productLabel;
@@ -783,6 +848,12 @@ class _PurchaseRequestDetailDialog extends StatelessWidget {
                 runSpacing: 12,
                 children: [
                   _detail('Status', status),
+                  _detail(
+                    'Request Type',
+                    request['request_type'] == 'free_text'
+                        ? 'Free-text Product'
+                        : 'Master Data Product',
+                  ),
                   _detail('Request Date', _text(request['request_date'])),
                   _detail('Sales Order', _text(request['sales_order_number'])),
                   _detail(
@@ -824,7 +895,11 @@ class _PurchaseRequestDetailDialog extends StatelessWidget {
                         (item) => DataRow(
                           cells: [
                             DataCell(
-                              CopyableCodeText(_text(item['product_code'])),
+                              item['product_code'] == null
+                                  ? SelectableText(_text(item['part_name']))
+                                  : CopyableCodeText(
+                                      _text(item['product_code']),
+                                    ),
                             ),
                             DataCell(SelectableText(_text(item['part_no']))),
                             DataCell(
@@ -955,6 +1030,9 @@ class _PurchaseRequestLine {
   String? candidateKey;
   String? productName;
   String? description;
+  final productNameController = TextEditingController();
+  final partNoController = TextEditingController();
+  final descriptionController = TextEditingController();
   final quantity = TextEditingController();
   String? unit;
   final remark = TextEditingController();
@@ -972,6 +1050,9 @@ class _PurchaseRequestLine {
       unit = json['unit']?.toString() {
     quantity.text = formatQuantity(json['quantity'], unit ?? 'pcs');
     remark.text = json['remark']?.toString() ?? '';
+    productNameController.text = productName ?? '';
+    partNoController.text = json['part_no']?.toString() ?? '';
+    descriptionController.text = description ?? '';
   }
 
   void selectCandidate(Map<String, dynamic>? candidate) {
@@ -981,6 +1062,8 @@ class _PurchaseRequestLine {
     candidateKey = '$salesOrderItemId:$productCode';
     productName = candidate['product_name']?.toString();
     description = candidate['description']?.toString();
+    productNameController.text = productName ?? '';
+    descriptionController.text = description ?? '';
     unit = candidate['unit']?.toString();
     if (quantity.text.trim().isEmpty) {
       quantity.text = formatQuantity(candidate['quantity'], unit ?? 'pcs');
@@ -993,6 +1076,9 @@ class _PurchaseRequestLine {
     candidateKey = null;
     productName = null;
     description = null;
+    productNameController.clear();
+    partNoController.clear();
+    descriptionController.clear();
     unit = null;
     quantity.clear();
   }
@@ -1000,6 +1086,9 @@ class _PurchaseRequestLine {
   void dispose() {
     quantity.dispose();
     remark.dispose();
+    productNameController.dispose();
+    partNoController.dispose();
+    descriptionController.dispose();
   }
 }
 
@@ -1008,16 +1097,20 @@ class _PurchaseRequestLineFields extends StatelessWidget {
     super.key,
     required this.index,
     required this.line,
+    required this.freeText,
     required this.candidates,
     required this.onChanged,
+    required this.onUnitChanged,
     required this.canRemove,
     required this.onRemove,
   });
 
   final int index;
   final _PurchaseRequestLine line;
+  final bool freeText;
   final List<Map<String, dynamic>> candidates;
   final ValueChanged<Map<String, dynamic>?> onChanged;
+  final ValueChanged<String?> onUnitChanged;
   final bool canRemove;
   final VoidCallback onRemove;
 
@@ -1039,36 +1132,56 @@ class _PurchaseRequestLineFields extends StatelessWidget {
                 ),
             ],
           ),
-          SearchableSelectField<String>(
-            value: line.candidateKey,
-            labelText: 'Product *',
-            searchHint: 'Search product',
-            options: candidates
-                .map(
-                  (candidate) => SearchableSelectOption(
-                    value:
-                        '${candidate['sales_order_item_id']}:${candidate['product_code']}',
-                    label:
-                        '${candidate['product_name']} — ${candidate['product_code']} • max ${formatQuantity(candidate['quantity'], candidate['unit'].toString())} ${candidate['unit']}',
-                    searchTerms: [
-                      candidate['product_code'].toString(),
-                      candidate['product_name']?.toString() ?? '',
-                      candidate['description']?.toString() ?? '',
-                    ],
-                  ),
-                )
-                .toList(),
-            onChanged: (key) {
-              for (final candidate in candidates) {
-                if ('${candidate['sales_order_item_id']}:${candidate['product_code']}' ==
-                    key) {
-                  onChanged(candidate);
-                  break;
+          if (freeText) ...[
+            TextField(
+              controller: line.productNameController,
+              decoration: const InputDecoration(labelText: 'Product Name *'),
+              maxLength: 200,
+            ),
+            TextField(
+              controller: line.partNoController,
+              decoration: const InputDecoration(
+                labelText: 'Part No (optional)',
+              ),
+              maxLength: 100,
+            ),
+            TextField(
+              controller: line.descriptionController,
+              decoration: const InputDecoration(labelText: 'Description'),
+              maxLines: 2,
+              maxLength: 4000,
+            ),
+          ] else
+            SearchableSelectField<String>(
+              value: line.candidateKey,
+              labelText: 'Product *',
+              searchHint: 'Search product',
+              options: candidates
+                  .map(
+                    (candidate) => SearchableSelectOption(
+                      value:
+                          '${candidate['sales_order_item_id']}:${candidate['product_code']}',
+                      label:
+                          '${candidate['product_name']} — ${candidate['product_code']} • max ${formatQuantity(candidate['quantity'], candidate['unit'].toString())} ${candidate['unit']}',
+                      searchTerms: [
+                        candidate['product_code'].toString(),
+                        candidate['product_name']?.toString() ?? '',
+                        candidate['description']?.toString() ?? '',
+                      ],
+                    ),
+                  )
+                  .toList(),
+              onChanged: (key) {
+                for (final candidate in candidates) {
+                  if ('${candidate['sales_order_item_id']}:${candidate['product_code']}' ==
+                      key) {
+                    onChanged(candidate);
+                    break;
+                  }
                 }
-              }
-            },
-            validator: (value) => value == null ? 'Required' : null,
-          ),
+              },
+              validator: (value) => value == null ? 'Required' : null,
+            ),
           Row(
             children: [
               Expanded(
@@ -1082,10 +1195,25 @@ class _PurchaseRequestLineFields extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: InputDecorator(
-                  decoration: const InputDecoration(labelText: 'Unit *'),
-                  child: Text(line.unit ?? '-'),
-                ),
+                child: freeText
+                    ? DropdownButtonFormField<String>(
+                        key: ValueKey('purchase-request-unit-${line.unit}'),
+                        initialValue: line.unit,
+                        decoration: const InputDecoration(labelText: 'Unit *'),
+                        items: inventoryUnits
+                            .map(
+                              (unit) => DropdownMenuItem(
+                                value: unit,
+                                child: Text(unit),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: onUnitChanged,
+                      )
+                    : InputDecorator(
+                        decoration: const InputDecoration(labelText: 'Unit *'),
+                        child: Text(line.unit ?? '-'),
+                      ),
               ),
             ],
           ),

@@ -1902,7 +1902,10 @@ class PaginatedWarehouseMaterialTransfers(BaseModel):
 
 
 class PurchaseRequestItemInput(BaseModel):
-    product_code: str = Field(min_length=1, max_length=30)
+    product_code: str | None = Field(default=None, min_length=1, max_length=30)
+    part_name: str | None = Field(default=None, min_length=1, max_length=200)
+    part_no: str | None = Field(default=None, max_length=100)
+    description: str = Field(default="", max_length=4000)
     sales_order_item_id: int | None = Field(default=None, gt=0)
     quantity: Decimal = Field(gt=0, max_digits=14, decimal_places=3)
     unit: UnitOfMeasure
@@ -1915,6 +1918,7 @@ class PurchaseRequestItemInput(BaseModel):
 
 
 class PurchaseRequestCreate(BaseModel):
+    request_type: str = Field(default="master_data", pattern="^(master_data|free_text)$")
     sales_order_number: str | None = Field(default=None, max_length=20)
     request_date: date
     requested_delivery_date: date
@@ -1924,7 +1928,16 @@ class PurchaseRequestCreate(BaseModel):
 
     @model_validator(mode="after")
     def unique_products(self) -> "PurchaseRequestCreate":
-        if len({item.product_code for item in self.items}) != len(self.items):
+        if self.request_type == "master_data" and any(not item.product_code for item in self.items):
+            raise ValueError("A Master Data Purchase Request requires a product for every line")
+        if self.request_type == "free_text" and any(
+            not item.part_name or not item.part_name.strip() or item.product_code for item in self.items
+        ):
+            raise ValueError("A free-text Purchase Request requires a product name for every line")
+        if self.request_type == "free_text" and self.sales_order_number:
+            raise ValueError("A free-text Purchase Request cannot be linked to a Sales Order")
+        product_codes = [item.product_code for item in self.items if item.product_code]
+        if len(set(product_codes)) != len(product_codes):
             raise ValueError("A product can only appear once in a Purchase Request")
         return self
 
@@ -1958,7 +1971,7 @@ class PurchaseRequestItemResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     line_number: int
-    product_code: str
+    product_code: str | None = None
     sales_order_item_id: int | None = None
     part_name: str
     part_no: str
@@ -1977,6 +1990,7 @@ class PurchaseRequestItemResponse(BaseModel):
 class PurchaseRequestResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     request_number: str
+    request_type: str = "master_data"
     sales_order_number: str | None = None
     request_date: date
     requested_delivery_date: date | None

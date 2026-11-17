@@ -582,13 +582,20 @@ def purchase_request_pdf_bytes(request: Any) -> bytes:
     decision_label = "Rejected By" if status_value == "rejected" else "Approved By"
     metadata = [
         ["Date", request.request_date.strftime("%d/%m/%Y"), "Status", status_label],
-        ["Sales Order", getattr(request, "sales_order_number", None) or "-", "Requested By", request.created_by_name],
-        ["Department", request.department_code or "-", "Receiving Plant", request.delivery_plant_code or "-"],
         [
+            "Request Type",
+            "Free-text Product"
+            if getattr(request, "request_type", "master_data") == "free_text"
+            else "Master Data Product",
+            "Sales Order",
+            getattr(request, "sales_order_number", None) or "-",
+        ],
+        ["Requested By", request.created_by_name, "Department", request.department_code or "-"],
+        [
+            "Receiving Plant",
+            request.delivery_plant_code or "-",
             "Expected Arrival",
             request.requested_delivery_date.strftime("%d/%m/%Y") if request.requested_delivery_date else "-",
-            "",
-            "",
         ],
         ["Notes", request.notes or "-", decision_label, request.reviewed_by_name or "Pending review"],
         ["Reviewed At", request.reviewed_at.strftime("%d/%m/%Y %H:%M") if request.reviewed_at else "-", "", ""],
@@ -608,7 +615,7 @@ def purchase_request_pdf_bytes(request: Any) -> bytes:
         rows.append(
             [
                 item.line_number,
-                item.product_code,
+                f"{item.part_name} ({item.product_code})" if item.product_code else item.part_name,
                 item.description,
                 requested,
                 approved,
