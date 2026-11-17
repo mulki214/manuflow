@@ -4,8 +4,16 @@ import pytest
 
 from app.document_services import delivery_note_pdf_bytes
 from app.logistics_services import format_document_number
+from app.master_data_services import reconcile_bom_items
 from app.middleware import is_delivery_path, is_finish_good_path
-from app.models import Delivery, DeliveryLine, DeliveryStatus, FinishGoodReceipt, FinishGoodStatus
+from app.models import (
+    BillOfMaterialItem,
+    Delivery,
+    DeliveryLine,
+    DeliveryStatus,
+    FinishGoodReceipt,
+    FinishGoodStatus,
+)
 from app.routers.logistics import delivery_lines, delivery_response, delivery_router, finish_response, finish_router
 from app.schemas import BillOfMaterialReplace, BomItemInput, DeliveryBatchCreate, DeliveryConfirm
 
@@ -133,6 +141,43 @@ def test_bill_of_material_rejects_fractional_discrete_quantity() -> None:
 def test_bill_of_material_rejects_fractional_discrete_batch_output() -> None:
     with pytest.raises(ValueError, match="whole number"):
         BillOfMaterialReplace(output_quantity="1.5", output_unit="pcs", items=[])
+
+
+def test_bill_of_material_update_reuses_existing_material_row() -> None:
+    existing = BillOfMaterialItem(
+        id=21,
+        finished_product_code="SP003",
+        material_product_code="H",
+        quantity=1,
+        unit="bar",
+        is_active=True,
+    )
+    requested = [BomItemInput(material_product_code="H", quantity=1, unit="bar")]
+
+    additions, removals = reconcile_bom_items("SP003", [existing], requested)
+
+    assert additions == []
+    assert removals == []
+    assert existing.id == 21
+    assert existing.quantity == 1
+    assert existing.unit == "bar"
+
+
+def test_bill_of_material_reconcile_only_inserts_new_and_removes_omitted_rows() -> None:
+    existing = BillOfMaterialItem(
+        id=21,
+        finished_product_code="SP003",
+        material_product_code="H",
+        quantity=1,
+        unit="bar",
+        is_active=True,
+    )
+    requested = [BomItemInput(material_product_code="NEW", quantity=2, unit="pcs")]
+
+    additions, removals = reconcile_bom_items("SP003", [existing], requested)
+
+    assert [(row.material_product_code, row.quantity, row.unit) for row in additions] == [("NEW", 2, "pcs")]
+    assert removals == [existing]
 
 
 def test_finish_good_and_delivery_routes_expose_the_required_lifecycle_actions() -> None:

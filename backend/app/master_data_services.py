@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import CodeSequence, Plant
+from app.models import BillOfMaterialItem, CodeSequence, Plant
 
 
 def build_initials(name: str, max_length: int = 12) -> str:
@@ -54,3 +54,33 @@ async def generate_plant_code(db: AsyncSession) -> str:
 def apply_changes(record: object, changes: dict) -> None:
     for field, value in changes.items():
         setattr(record, field, value)
+
+
+def reconcile_bom_items(
+    finished_product_code: str,
+    existing_items: list[BillOfMaterialItem],
+    requested_items: list[object],
+) -> tuple[list[BillOfMaterialItem], list[BillOfMaterialItem]]:
+    """Update BOM rows in place where possible, avoiding transient unique-key collisions."""
+    existing_by_material = {record.material_product_code: record for record in existing_items}
+    requested_by_material = {item.material_product_code: item for item in requested_items}
+
+    additions: list[BillOfMaterialItem] = []
+    for material_code, item in requested_by_material.items():
+        record = existing_by_material.get(material_code)
+        if record is not None:
+            record.quantity = item.quantity
+            record.unit = item.unit.value
+            record.is_active = True
+            continue
+        additions.append(
+            BillOfMaterialItem(
+                finished_product_code=finished_product_code,
+                material_product_code=material_code,
+                quantity=item.quantity,
+                unit=item.unit.value,
+            )
+        )
+
+    removals = [record for record in existing_items if record.material_product_code not in requested_by_material]
+    return additions, removals
