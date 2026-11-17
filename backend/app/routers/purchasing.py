@@ -35,6 +35,7 @@ from app.models import (
     PurchaseOrderKind,
     PurchaseOrderPurpose,
     PurchaseOrderStatus,
+    Receiving,
     SalesOrder,
     SalesOrderItem,
     SalesOrderMaterialAllocation,
@@ -104,10 +105,45 @@ async def get_order(db: AsyncSession, po_number: str, *, for_update: bool = Fals
     return order
 
 
+def purchase_order_status_allows_delete(order: PurchaseOrder, access: PurchasingAccess) -> bool:
+    if order.status == PurchaseOrderStatus.waiting_review:
+        return True
+    return order.status == PurchaseOrderStatus.approved and access.can_review
+
+
+async def purchase_order_has_transactions(db: AsyncSession, order: PurchaseOrder) -> bool:
+    item_ids = [item.id for item in order.items]
+    receiving_conditions = [Receiving.po_number == order.po_number]
+    if item_ids:
+        receiving_conditions.append(Receiving.purchase_order_item_id.in_(item_ids))
+    receipt_number = await db.scalar(
+        select(Receiving.receipt_number).where(or_(*receiving_conditions)).limit(1)
+    )
+    if receipt_number:
+        return True
+
+    if item_ids:
+        dispatch_id = await db.scalar(
+            select(SubcontractDispatch.id).where(SubcontractDispatch.purchase_order_item_id.in_(item_ids)).limit(1)
+        )
+        if dispatch_id:
+            return True
+
+    revision_id = await db.scalar(
+        select(OrderRevision.id)
+        .where(OrderRevision.order_type == "purchase_order", OrderRevision.order_number == order.po_number)
+        .limit(1)
+    )
+    return revision_id is not None
+
+
 async def order_response(db: AsyncSession, order: PurchaseOrder, access: PurchasingAccess) -> PurchaseOrderResponse:
     creator = await db.get(User, order.created_by)
     reviewer = await db.get(User, order.reviewed_by) if order.reviewed_by else None
     waiting = order.status == PurchaseOrderStatus.waiting_review
+    can_delete = purchase_order_status_allows_delete(order, access) and not await purchase_order_has_transactions(
+        db, order
+    )
     creator_name = f"{creator.first_name} {creator.last_name}".strip() if creator else order.created_by
     reviewer_name = f"{reviewer.first_name} {reviewer.last_name}".strip() if reviewer else None
     dispatch_rows = await db.execute(
@@ -184,7 +220,7 @@ async def order_response(db: AsyncSession, order: PurchaseOrder, access: Purchas
         reviewed_at=order.reviewed_at,
         rejection_reason=order.rejection_reason,
         can_edit=order.status != PurchaseOrderStatus.rejected,
-        can_delete=waiting,
+        can_delete=can_delete,
         can_review=waiting and access.can_review,
         creator_qr_payload=signed_document_payload(
             "purchase_order", order.po_number, "created", order.created_by, creator_name, order.created_at
@@ -1185,11 +1221,29 @@ async def delete_purchase_order(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    await current_access(db, current_user)
+    access = await current_access(db, current_user)
     order = await get_order(db, po_number)
-    ensure_waiting_review(order.status)
-    await db.delete(order)
-    await db.commit()
+    if order.status == PurchaseOrderStatus.approved and not access.can_review:
+        ensure_purchasing_head(access)
+    if not purchase_order_status_allows_delete(order, access):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only a waiting-review PO or an approved PO deleted by Head Purchasing can be deleted",
+        )
+    if await purchase_order_has_transactions(db, order):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Purchase Order has related transactions or revision history and cannot be deleted",
+        )
+    try:
+        await db.delete(order)
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Purchase Order became linked to a transaction and can no longer be deleted",
+        ) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

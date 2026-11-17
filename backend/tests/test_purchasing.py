@@ -21,6 +21,7 @@ from app.purchasing_services import (
     payment_due_date,
     sales_order_po_demand_rows,
 )
+from app.routers.purchasing import purchase_order_has_transactions, purchase_order_status_allows_delete
 from app.schemas import PurchaseOrderCreate, SubcontractDispatchCreate
 
 
@@ -110,6 +111,40 @@ def test_administrator_can_access_but_cannot_review_as_department_head() -> None
     access = resolve_purchasing_access(admin, None)
     assert access.can_access
     assert not access.can_review
+
+
+def test_only_head_can_delete_approved_purchase_orders() -> None:
+    head = resolve_purchasing_access(user("HEAD"), department("PIC", "HEAD"))
+    pic = resolve_purchasing_access(user("PIC"), department("PIC", "HEAD"))
+    approved_order = SimpleNamespace(status=PurchaseOrderStatus.approved)
+    waiting_order = SimpleNamespace(status=PurchaseOrderStatus.waiting_review)
+
+    assert purchase_order_status_allows_delete(approved_order, head)
+    assert not purchase_order_status_allows_delete(approved_order, pic)
+    assert purchase_order_status_allows_delete(waiting_order, pic)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("responses", "expected"),
+    [
+        ([None, None, None], False),
+        (["RCV-001"], True),
+        ([None, 12], True),
+        ([None, None, 4], True),
+    ],
+)
+async def test_purchase_order_delete_guard_detects_any_related_transaction(responses, expected) -> None:
+    class Session:
+        def __init__(self, results):
+            self.results = iter(results)
+
+        async def scalar(self, _statement):
+            return next(self.results)
+
+    order = SimpleNamespace(po_number="PO-001", items=[SimpleNamespace(id=1)])
+
+    assert await purchase_order_has_transactions(Session(responses), order) is expected
 
 
 def test_purchase_order_number_and_payment_due_date() -> None:
