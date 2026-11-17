@@ -13,25 +13,39 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.document_services import purchase_request_pdf_bytes, signed_document_payload
 from app.models import (
-    AccessLevel, Corporation, DailyPurchaseRequestSequence, FulfillmentStatus,
-    Plant, Product, PurchaseOrder, PurchaseOrderItem, PurchaseOrderStatus,
-    PurchaseRequest, PurchaseRequestItem, PurchaseRequestItemApprovalStatus, PurchaseRequestStatus, User,
-    SalesOrder, SalesOrderMaterialAllocation, SalesOrderStatus,
+    AccessLevel,
+    Corporation,
+    DailyPurchaseRequestSequence,
+    FulfillmentStatus,
+    Plant,
+    Product,
+    PurchaseOrder,
+    PurchaseOrderItem,
+    PurchaseOrderStatus,
+    PurchaseRequest,
+    PurchaseRequestItem,
+    PurchaseRequestItemApprovalStatus,
+    PurchaseRequestStatus,
+    SalesOrder,
+    SalesOrderMaterialAllocation,
+    SalesOrderStatus,
+    User,
 )
 from app.purchasing_services import generate_purchase_order_number, payment_due_date
 from app.schemas import (
-    PaginatedPurchaseRequests, PurchaseRequestApproval, PurchaseRequestCreate, PurchaseRequestRejection, PurchaseRequestUpdate,
+    PaginatedPurchaseRequests,
+    PurchaseRequestApproval,
+    PurchaseRequestCreate,
+    PurchaseRequestRejection,
     PurchaseRequestResponse,
+    PurchaseRequestUpdate,
 )
 
 router = APIRouter(prefix="/purchase-requests", tags=["Purchase Requests"])
 
 
 def can_review(user: User) -> bool:
-    return (
-        user.access_level == AccessLevel.head
-        and user.department_code == settings.purchasing_department_code
-    )
+    return user.access_level == AccessLevel.head and user.department_code == settings.purchasing_department_code
 
 
 def can_view_all(user: User) -> bool:
@@ -39,7 +53,13 @@ def can_view_all(user: User) -> bool:
 
 
 async def get_request(db: AsyncSession, number: str) -> PurchaseRequest:
-    record = (await db.execute(select(PurchaseRequest).options(selectinload(PurchaseRequest.items)).where(PurchaseRequest.request_number == number))).scalar_one_or_none()
+    record = (
+        await db.execute(
+            select(PurchaseRequest)
+            .options(selectinload(PurchaseRequest.items))
+            .where(PurchaseRequest.request_number == number)
+        )
+    ).scalar_one_or_none()
     if not record:
         raise HTTPException(status_code=404, detail="Purchase Request not found")
     return record
@@ -59,7 +79,9 @@ async def validate_sales_order_request_items(db: AsyncSession, sales_order_numbe
     for request_item in items:
         so_item = so_items.get(request_item.sales_order_item_id)
         if not so_item:
-            raise HTTPException(status_code=422, detail="Every Purchase Request item must reference an item on its Sales Order")
+            raise HTTPException(
+                status_code=422, detail="Every Purchase Request item must reference an item on its Sales Order"
+            )
         product = await db.get(Product, request_item.product_code)
         if not product:
             raise HTTPException(status_code=422, detail=f"Product {request_item.product_code} was not found")
@@ -74,10 +96,14 @@ async def validate_sales_order_request_items(db: AsyncSession, sales_order_numbe
                 )
             ).scalar_one_or_none()
             if not allocation:
-                raise HTTPException(status_code=422, detail=f"Product {product.code} is not on the linked Sales Order/BOM")
+                raise HTTPException(
+                    status_code=422, detail=f"Product {product.code} is not on the linked Sales Order/BOM"
+                )
         expected_unit = so_item.unit if product.code == so_item.product_code else allocation.unit
         if request_item.unit.value != expected_unit:
-            raise HTTPException(status_code=422, detail=f"Unit for {product.code} must match Sales Order/BOM unit {expected_unit}")
+            raise HTTPException(
+                status_code=422, detail=f"Unit for {product.code} must match Sales Order/BOM unit {expected_unit}"
+            )
     return sales_order
 
 
@@ -87,19 +113,41 @@ async def response(db: AsyncSession, record: PurchaseRequest, user: User) -> Pur
     creator_name = f"{creator.first_name} {creator.last_name}".strip() if creator else record.created_by
     reviewer_name = f"{reviewer.first_name} {reviewer.last_name}".strip() if reviewer else None
     return PurchaseRequestResponse(
-        request_number=record.request_number, request_date=record.request_date,
+        request_number=record.request_number,
+        request_type=record.request_type,
+        request_date=record.request_date,
         sales_order_number=record.sales_order_number,
         requested_delivery_date=record.requested_delivery_date,
         delivery_plant_code=record.delivery_plant_code,
-        department_code=record.department_code, notes=record.notes, status=record.status,
-        created_by=record.created_by, created_by_name=creator_name,
-        reviewed_by=record.reviewed_by, reviewed_by_name=reviewer_name,
-        reviewed_at=record.reviewed_at, rejection_reason=record.rejection_reason,
+        department_code=record.department_code,
+        notes=record.notes,
+        status=record.status,
+        created_by=record.created_by,
+        created_by_name=creator_name,
+        reviewed_by=record.reviewed_by,
+        reviewed_by_name=reviewer_name,
+        reviewed_at=record.reviewed_at,
+        rejection_reason=record.rejection_reason,
         can_review=record.status == PurchaseRequestStatus.waiting_review and can_review(user),
         can_edit=record.status == PurchaseRequestStatus.waiting_review and record.created_by == user.id,
-        creator_qr_payload=signed_document_payload("purchase_request", record.request_number, "submitted", record.created_by, creator_name, record.created_at),
-        review_qr_payload=(signed_document_payload("purchase_request", record.request_number, record.status.value, record.reviewed_by, reviewer_name or record.reviewed_by, record.reviewed_at) if record.status != PurchaseRequestStatus.waiting_review and record.reviewed_by and record.reviewed_at else None),
-        items=record.items, created_at=record.created_at, updated_at=record.updated_at,
+        creator_qr_payload=signed_document_payload(
+            "purchase_request", record.request_number, "submitted", record.created_by, creator_name, record.created_at
+        ),
+        review_qr_payload=(
+            signed_document_payload(
+                "purchase_request",
+                record.request_number,
+                record.status.value,
+                record.reviewed_by,
+                reviewer_name or record.reviewed_by,
+                record.reviewed_at,
+            )
+            if record.status != PurchaseRequestStatus.waiting_review and record.reviewed_by and record.reviewed_at
+            else None
+        ),
+        items=record.items,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
     )
 
 
@@ -111,31 +159,43 @@ async def request_sales_order_candidates(
 ) -> dict[str, list[dict[str, object]]]:
     """SO-linked products available for all employees to use in a Purchase Request."""
     orders = (
-        await db.execute(
-            select(SalesOrder)
-            .options(selectinload(SalesOrder.items))
-            .where(
-                SalesOrder.status == SalesOrderStatus.approved,
-                SalesOrder.fulfillment_status == FulfillmentStatus.open,
+        (
+            await db.execute(
+                select(SalesOrder)
+                .options(selectinload(SalesOrder.items))
+                .where(
+                    SalesOrder.status == SalesOrderStatus.approved,
+                    SalesOrder.fulfillment_status == FulfillmentStatus.open,
+                )
+                .order_by(SalesOrder.created_at.desc())
+                .limit(size)
             )
-            .order_by(SalesOrder.created_at.desc())
-            .limit(size)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     result: list[dict[str, object]] = []
     for order in orders:
         candidates: list[dict[str, object]] = []
         for so_item in order.items:
             products = [(so_item.product_code, so_item.quantity_grams - so_item.delivered_quantity, so_item.unit)]
             allocations = (
-                await db.execute(
-                    select(SalesOrderMaterialAllocation).where(
-                        SalesOrderMaterialAllocation.sales_order_item_id == so_item.id
+                (
+                    await db.execute(
+                        select(SalesOrderMaterialAllocation).where(
+                            SalesOrderMaterialAllocation.sales_order_item_id == so_item.id
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             products.extend(
-                (allocation.material_product_code, allocation.required_quantity - allocation.received_quantity, allocation.unit)
+                (
+                    allocation.material_product_code,
+                    allocation.required_quantity - allocation.received_quantity,
+                    allocation.unit,
+                )
                 for allocation in allocations
             )
             for product_code, demand, unit in products:
@@ -153,26 +213,40 @@ async def request_sales_order_candidates(
                 available = demand - reserved
                 product = await db.get(Product, product_code) if available > 0 else None
                 if product:
-                    candidates.append({
-                        "sales_order_item_id": so_item.id,
-                        "product_code": product.code,
-                        "product_name": product.part_name,
-                        "description": product.description,
-                        "quantity": available,
-                        "unit": unit,
-                    })
+                    candidates.append(
+                        {
+                            "sales_order_item_id": so_item.id,
+                            "product_code": product.code,
+                            "product_name": product.part_name,
+                            "description": product.description,
+                            "quantity": available,
+                            "unit": unit,
+                        }
+                    )
         if candidates:
-            result.append({
-                "sales_order_number": order.sales_order_number,
-                "customer_po_number": order.customer_po_number,
-                "customer_name": order.customer_name,
-                "items": candidates,
-            })
+            result.append(
+                {
+                    "sales_order_number": order.sales_order_number,
+                    "customer_po_number": order.customer_po_number,
+                    "customer_name": order.customer_name,
+                    "items": candidates,
+                }
+            )
     return {"items": result}
 
 
 async def next_number(db: AsyncSession, request_date) -> str:
-    value = (await db.execute(insert(DailyPurchaseRequestSequence).values(sequence_date=request_date, last_value=0).on_conflict_do_update(index_elements=[DailyPurchaseRequestSequence.sequence_date], set_={"last_value": DailyPurchaseRequestSequence.last_value + 1}).returning(DailyPurchaseRequestSequence.last_value))).scalar_one()
+    value = (
+        await db.execute(
+            insert(DailyPurchaseRequestSequence)
+            .values(sequence_date=request_date, last_value=0)
+            .on_conflict_do_update(
+                index_elements=[DailyPurchaseRequestSequence.sequence_date],
+                set_={"last_value": DailyPurchaseRequestSequence.last_value + 1},
+            )
+            .returning(DailyPurchaseRequestSequence.last_value)
+        )
+    ).scalar_one()
     if value > 999:
         raise HTTPException(status_code=409, detail="The daily Purchase Request limit of 999 has been reached")
     return f"PR-{request_date:%d%m%y}-{value:03d}"
@@ -184,42 +258,121 @@ def assert_visible(record: PurchaseRequest, user: User) -> None:
 
 
 @router.get("", response_model=PaginatedPurchaseRequests)
-async def list_requests(page: int = Query(1, ge=1), size: int = Query(10, ge=1, le=100), search: str | None = None, request_status: PurchaseRequestStatus | None = Query(None, alias="status"), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> PaginatedPurchaseRequests:
+async def list_requests(
+    page: int = Query(1, ge=1),
+    size: int = Query(10, ge=1, le=100),
+    search: str | None = None,
+    request_status: PurchaseRequestStatus | None = Query(None, alias="status"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PaginatedPurchaseRequests:
     filters = []
-    if not can_view_all(current_user): filters.append(PurchaseRequest.created_by == current_user.id)
-    if search: filters.append(or_(PurchaseRequest.request_number.ilike(f"%{search.strip()}%"), PurchaseRequest.created_by.ilike(f"%{search.strip()}%")))
-    if request_status: filters.append(PurchaseRequest.status == request_status)
-    records = list((await db.execute(select(PurchaseRequest).options(selectinload(PurchaseRequest.items)).where(*filters).order_by(PurchaseRequest.created_at.desc()).offset((page - 1) * size).limit(size))).scalars())
+    if not can_view_all(current_user):
+        filters.append(PurchaseRequest.created_by == current_user.id)
+    if search:
+        filters.append(
+            or_(
+                PurchaseRequest.request_number.ilike(f"%{search.strip()}%"),
+                PurchaseRequest.created_by.ilike(f"%{search.strip()}%"),
+            )
+        )
+    if request_status:
+        filters.append(PurchaseRequest.status == request_status)
+    records = list(
+        (
+            await db.execute(
+                select(PurchaseRequest)
+                .options(selectinload(PurchaseRequest.items))
+                .where(*filters)
+                .order_by(PurchaseRequest.created_at.desc())
+                .offset((page - 1) * size)
+                .limit(size)
+            )
+        ).scalars()
+    )
     total = await db.scalar(select(func.count()).select_from(PurchaseRequest).where(*filters))
-    return PaginatedPurchaseRequests(items=[await response(db, record, current_user) for record in records], total=total or 0, page=page, size=size)
+    return PaginatedPurchaseRequests(
+        items=[await response(db, record, current_user) for record in records], total=total or 0, page=page, size=size
+    )
 
 
 @router.post("", response_model=PurchaseRequestResponse, status_code=status.HTTP_201_CREATED)
-async def create_request(data: PurchaseRequestCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> PurchaseRequestResponse:
-    if not data.sales_order_number:
-        raise HTTPException(status_code=422, detail="A Sales Order is required for every Purchase Request")
-    await validate_sales_order_request_items(db, data.sales_order_number, data.items)
+async def create_request(
+    data: PurchaseRequestCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+) -> PurchaseRequestResponse:
+    if data.request_type == "master_data":
+        if not data.sales_order_number:
+            raise HTTPException(status_code=422, detail="A Sales Order is required for a Master Data Purchase Request")
+        await validate_sales_order_request_items(db, data.sales_order_number, data.items)
+    elif data.sales_order_number:
+        raise HTTPException(status_code=422, detail="A free-text Purchase Request cannot be linked to a Sales Order")
     plant = await db.get(Plant, data.delivery_plant_code)
     if not plant:
         raise HTTPException(status_code=422, detail="Selected delivery plant was not found")
-    record = PurchaseRequest(request_number=await next_number(db, data.request_date), sales_order_number=data.sales_order_number, request_date=data.request_date, requested_delivery_date=data.requested_delivery_date, delivery_plant_code=plant.code, department_code=current_user.department_code, notes=data.notes.strip(), created_by=current_user.id)
+    record = PurchaseRequest(
+        request_number=await next_number(db, data.request_date),
+        request_type=data.request_type,
+        sales_order_number=data.sales_order_number,
+        request_date=data.request_date,
+        requested_delivery_date=data.requested_delivery_date,
+        delivery_plant_code=plant.code,
+        department_code=current_user.department_code,
+        notes=data.notes.strip(),
+        created_by=current_user.id,
+    )
     for index, item in enumerate(data.items, 1):
-        product = await db.get(Product, item.product_code)
-        if not product: raise HTTPException(status_code=422, detail=f"Product {item.product_code} was not found")
-        record.items.append(PurchaseRequestItem(line_number=index, product_code=product.code, sales_order_item_id=item.sales_order_item_id, part_name=product.part_name, part_no=product.part_no, description=product.description, quantity=item.quantity, unit=item.unit.value, remark=item.remark.strip()))
-    db.add(record); await db.commit(); return await response(db, await get_request(db, record.request_number), current_user)
+        if data.request_type == "master_data":
+            product = await db.get(Product, item.product_code)
+            if not product:
+                raise HTTPException(status_code=422, detail=f"Product {item.product_code} was not found")
+            product_code, part_name, part_no, description = (
+                product.code,
+                product.part_name,
+                product.part_no,
+                product.description,
+            )
+        else:
+            product_code, part_name = None, item.part_name.strip()
+            part_no, description = (item.part_no or "").strip(), item.description.strip()
+        record.items.append(
+            PurchaseRequestItem(
+                line_number=index,
+                product_code=product_code,
+                sales_order_item_id=item.sales_order_item_id if data.request_type == "master_data" else None,
+                part_name=part_name,
+                part_no=part_no,
+                description=description,
+                quantity=item.quantity,
+                unit=item.unit.value,
+                remark=item.remark.strip(),
+            )
+        )
+    db.add(record)
+    await db.commit()
+    return await response(db, await get_request(db, record.request_number), current_user)
 
 
 @router.patch("/{request_number}", response_model=PurchaseRequestResponse)
-async def update_request(request_number: str, data: PurchaseRequestUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> PurchaseRequestResponse:
+async def update_request(
+    request_number: str,
+    data: PurchaseRequestUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PurchaseRequestResponse:
     record = await get_request(db, request_number)
     if record.created_by != current_user.id:
         raise HTTPException(status_code=403, detail="Only the requester can edit this Purchase Request")
     if record.status != PurchaseRequestStatus.waiting_review:
         raise HTTPException(status_code=409, detail="Approved or rejected Purchase Requests cannot be edited")
+    if data.request_type != record.request_type:
+        raise HTTPException(status_code=422, detail="Purchase Request type cannot be changed after submission")
     sales_order_number = data.sales_order_number or record.sales_order_number
     if record.sales_order_number and data.sales_order_number != record.sales_order_number:
         raise HTTPException(status_code=422, detail="The linked Sales Order cannot be changed")
+    if record.request_type == "master_data" and not sales_order_number:
+        raise HTTPException(status_code=422, detail="A Sales Order is required for a Master Data Purchase Request")
+    if record.request_type == "free_text" and sales_order_number:
+        raise HTTPException(status_code=422, detail="A free-text Purchase Request cannot be linked to a Sales Order")
     if sales_order_number:
         await validate_sales_order_request_items(db, sales_order_number, data.items)
     plant = await db.get(Plant, data.delivery_plant_code)
@@ -227,10 +380,32 @@ async def update_request(request_number: str, data: PurchaseRequestUpdate, db: A
         raise HTTPException(status_code=422, detail="Selected receiving plant was not found")
     new_items: list[PurchaseRequestItem] = []
     for index, item in enumerate(data.items, 1):
-        product = await db.get(Product, item.product_code)
-        if not product:
-            raise HTTPException(status_code=422, detail=f"Product {item.product_code} was not found")
-        new_items.append(PurchaseRequestItem(line_number=index, product_code=product.code, sales_order_item_id=item.sales_order_item_id, part_name=product.part_name, part_no=product.part_no, description=product.description, quantity=item.quantity, unit=item.unit.value, remark=item.remark.strip()))
+        if record.request_type == "master_data":
+            product = await db.get(Product, item.product_code)
+            if not product:
+                raise HTTPException(status_code=422, detail=f"Product {item.product_code} was not found")
+            product_code, part_name, part_no, description = (
+                product.code,
+                product.part_name,
+                product.part_no,
+                product.description,
+            )
+        else:
+            product_code, part_name = None, item.part_name.strip()
+            part_no, description = (item.part_no or "").strip(), item.description.strip()
+        new_items.append(
+            PurchaseRequestItem(
+                line_number=index,
+                product_code=product_code,
+                sales_order_item_id=item.sales_order_item_id if record.request_type == "master_data" else None,
+                part_name=part_name,
+                part_no=part_no,
+                description=description,
+                quantity=item.quantity,
+                unit=item.unit.value,
+                remark=item.remark.strip(),
+            )
+        )
     record.request_date = data.request_date
     record.requested_delivery_date = data.requested_delivery_date
     record.sales_order_number = sales_order_number
@@ -245,26 +420,45 @@ async def update_request(request_number: str, data: PurchaseRequestUpdate, db: A
 
 
 @router.get("/{request_number}", response_model=PurchaseRequestResponse)
-async def get_one(request_number: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> PurchaseRequestResponse:
-    record = await get_request(db, request_number); assert_visible(record, current_user); return await response(db, record, current_user)
+async def get_one(
+    request_number: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+) -> PurchaseRequestResponse:
+    record = await get_request(db, request_number)
+    assert_visible(record, current_user)
+    return await response(db, record, current_user)
 
 
 @router.get("/{request_number}/pdf")
-async def download_pdf(request_number: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> Response:
+async def download_pdf(
+    request_number: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+) -> Response:
     record = await get_request(db, request_number)
     assert_visible(record, current_user)
     payload = await response(db, record, current_user)
     content = purchase_request_pdf_bytes(payload)
-    return Response(content=content, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="purchase-request-{record.request_number}.pdf"'})
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="purchase-request-{record.request_number}.pdf"'},
+    )
 
 
 @router.post("/{request_number}/approve", response_model=PurchaseRequestResponse)
-async def approve(request_number: str, data: PurchaseRequestApproval | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> PurchaseRequestResponse:
-    if not can_review(current_user): raise HTTPException(status_code=403, detail="Only Head Purchasing can review Purchase Requests")
+async def approve(
+    request_number: str,
+    data: PurchaseRequestApproval | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PurchaseRequestResponse:
+    if not can_review(current_user):
+        raise HTTPException(status_code=403, detail="Only Head Purchasing can review Purchase Requests")
     record = await get_request(db, request_number)
-    if record.status != PurchaseRequestStatus.waiting_review: raise HTTPException(status_code=409, detail="Purchase Request has already been reviewed")
+    if record.status != PurchaseRequestStatus.waiting_review:
+        raise HTTPException(status_code=409, detail="Purchase Request has already been reviewed")
     if not record.delivery_plant_code or not record.requested_delivery_date:
-        raise HTTPException(status_code=422, detail="Purchase Request is missing delivery plant or requested delivery date")
+        raise HTTPException(
+            status_code=422, detail="Purchase Request is missing delivery plant or requested delivery date"
+        )
     plant = await db.get(Plant, record.delivery_plant_code)
     if not plant:
         raise HTTPException(status_code=422, detail="Selected delivery plant was not found")
@@ -279,34 +473,64 @@ async def approve(request_number: str, data: PurchaseRequestApproval | None = No
         reason = decision.reason.strip() if decision else ""
         if not approved:
             if len(reason) < 3:
-                raise HTTPException(status_code=422, detail=f"A reason is required for rejected item {item.product_code}")
+                raise HTTPException(status_code=422, detail=f"A reason is required for rejected item {item.part_name}")
             item.approval_status = PurchaseRequestItemApprovalStatus.rejected
             item.approved_quantity = Decimal("0")
             item.review_reason = reason
             item.reviewed_by = current_user.id
             item.reviewed_at = now
             continue
-        approved_quantity = Decimal(decision.approved_quantity) if decision and decision.approved_quantity is not None else Decimal(item.quantity)
+        approved_quantity = (
+            Decimal(decision.approved_quantity)
+            if decision and decision.approved_quantity is not None
+            else Decimal(item.quantity)
+        )
         if approved_quantity <= 0 or approved_quantity > Decimal(item.quantity):
-            raise HTTPException(status_code=422, detail=f"Approved quantity for {item.product_code} must be greater than zero and cannot exceed requested quantity")
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Approved quantity for {item.part_name} must be greater than zero "
+                    "and cannot exceed requested quantity"
+                ),
+            )
         try:
             from app.operational_services import require_whole_quantity
+
             require_whole_quantity(approved_quantity, item.unit, "Approved quantity")
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         if approved_quantity != Decimal(item.quantity) and len(reason) < 3:
-            raise HTTPException(status_code=422, detail=f"A reason is required when adjusting quantity for {item.product_code}")
+            raise HTTPException(
+                status_code=422, detail=f"A reason is required when adjusting quantity for {item.part_name}"
+            )
         item.approval_status = PurchaseRequestItemApprovalStatus.approved
         item.approved_quantity = approved_quantity
         item.review_reason = reason or None
         item.reviewed_by = current_user.id
         item.reviewed_at = now
         approved_items.append(item)
+    if record.request_type == "free_text":
+        record.status = (
+            PurchaseRequestStatus.approved
+            if len(approved_items) == len(record.items)
+            else PurchaseRequestStatus.partially_approved
+            if approved_items
+            else PurchaseRequestStatus.rejected
+        )
+        record.reviewed_by = current_user.id
+        record.reviewed_at = now
+        if not approved_items:
+            record.rejection_reason = "All requested items were rejected"
+        await db.commit()
+        return await response(db, await get_request(db, request_number), current_user)
     products = {item.product_code: await db.get(Product, item.product_code) for item in approved_items}
     sales_order = None
     if approved_items:
         if not record.sales_order_number:
-            raise HTTPException(status_code=422, detail="This Purchase Request has no Sales Order; edit it and link an approved SO before approval")
+            raise HTTPException(
+                status_code=422,
+                detail="This Purchase Request has no Sales Order; edit it and link an approved SO before approval",
+            )
         sales_order = (
             await db.execute(
                 select(SalesOrder)
@@ -322,7 +546,9 @@ async def approve(request_number: str, data: PurchaseRequestApproval | None = No
             so_item = so_items.get(request_item.sales_order_item_id)
             product = products[request_item.product_code]
             if not so_item or not product:
-                raise HTTPException(status_code=422, detail="Every approved request line must reference its Sales Order item")
+                raise HTTPException(
+                    status_code=422, detail="Every approved request line must reference its Sales Order item"
+                )
             allocation = None
             if product.code != so_item.product_code:
                 allocation = (
@@ -334,10 +560,14 @@ async def approve(request_number: str, data: PurchaseRequestApproval | None = No
                     )
                 ).scalar_one_or_none()
                 if not allocation:
-                    raise HTTPException(status_code=422, detail=f"Product {product.code} is not on the linked Sales Order/BOM")
+                    raise HTTPException(
+                        status_code=422, detail=f"Product {product.code} is not on the linked Sales Order/BOM"
+                    )
             expected_unit = so_item.unit if product.code == so_item.product_code else allocation.unit
             if request_item.unit != expected_unit:
-                raise HTTPException(status_code=422, detail=f"Unit for {product.code} must match Sales Order/BOM unit {expected_unit}")
+                raise HTTPException(
+                    status_code=422, detail=f"Unit for {product.code} must match Sales Order/BOM unit {expected_unit}"
+                )
             demand = (
                 so_item.quantity_grams - so_item.delivered_quantity
                 if product.code == so_item.product_code
@@ -353,10 +583,18 @@ async def approve(request_number: str, data: PurchaseRequestApproval | None = No
                 )
             ) or Decimal("0")
             if already_ordered + request_item.approved_quantity > demand:
-                raise HTTPException(status_code=409, detail=f"Approved PO quantity exceeds remaining SO/BOM demand for {product.code}")
-    missing_supplier = [item.product_code for item, product in ((item, products[item.product_code]) for item in approved_items) if not product or not product.supplier_code]
+                raise HTTPException(
+                    status_code=409, detail=f"Approved PO quantity exceeds remaining SO/BOM demand for {product.code}"
+                )
+    missing_supplier = [
+        item.product_code
+        for item, product in ((item, products[item.product_code]) for item in approved_items)
+        if not product or not product.supplier_code
+    ]
     if missing_supplier:
-        raise HTTPException(status_code=422, detail=f"Products need an external supplier before approval: {', '.join(missing_supplier)}")
+        raise HTTPException(
+            status_code=422, detail=f"Products need an external supplier before approval: {', '.join(missing_supplier)}"
+        )
     grouped: dict[str, list[PurchaseRequestItem]] = {}
     for item in approved_items:
         grouped.setdefault(products[item.product_code].supplier_code, []).append(item)
@@ -366,36 +604,82 @@ async def approve(request_number: str, data: PurchaseRequestApproval | None = No
             raise HTTPException(status_code=422, detail=f"Supplier {supplier_code} is not valid")
         po_number = await generate_purchase_order_number(db, record.request_date)
         order = PurchaseOrder(
-            po_number=po_number, sales_order_number=sales_order.sales_order_number, po_date=record.request_date, supplier_code=supplier.code,
-            supplier_name=supplier.name, supplier_address=supplier.address,
-            supplier_phone=supplier.phone_number, supplier_contact_person=supplier.contact_person_name,
-            requested_delivery_date=record.requested_delivery_date, delivery_plant_code=plant.code,
-            delivery_plant_name=plant.name, delivery_address=plant.full_address,
+            po_number=po_number,
+            sales_order_number=sales_order.sales_order_number,
+            po_date=record.request_date,
+            supplier_code=supplier.code,
+            supplier_name=supplier.name,
+            supplier_address=supplier.address,
+            supplier_phone=supplier.phone_number,
+            supplier_contact_person=supplier.contact_person_name,
+            requested_delivery_date=record.requested_delivery_date,
+            delivery_plant_code=plant.code,
+            delivery_plant_name=plant.name,
+            delivery_address=plant.full_address,
             notes=f"Generated from Purchase Request {record.request_number}. {record.notes}".strip(),
-            payment_terms_days=30, payment_due_date=payment_due_date(record.request_date, 30),
-            currency="IDR", subtotal=Decimal("0"), discount_amount=Decimal("0"),
-            ppn_rate=Decimal("0"), ppn_amount=Decimal("0"), pph23_rate=Decimal("0"),
-            pph23_amount=Decimal("0"), grand_total=Decimal("0"),
-            status=PurchaseOrderStatus.approved, fulfillment_status=FulfillmentStatus.open,
-            department_code=settings.purchasing_department_code, created_by=current_user.id,
-            reviewed_by=current_user.id, reviewed_at=now,
+            payment_terms_days=30,
+            payment_due_date=payment_due_date(record.request_date, 30),
+            currency="IDR",
+            subtotal=Decimal("0"),
+            discount_amount=Decimal("0"),
+            ppn_rate=Decimal("0"),
+            ppn_amount=Decimal("0"),
+            pph23_rate=Decimal("0"),
+            pph23_amount=Decimal("0"),
+            grand_total=Decimal("0"),
+            status=PurchaseOrderStatus.approved,
+            fulfillment_status=FulfillmentStatus.open,
+            department_code=settings.purchasing_department_code,
+            created_by=current_user.id,
+            reviewed_by=current_user.id,
+            reviewed_at=now,
         )
         for line_number, item in enumerate(items, 1):
-            order.items.append(PurchaseOrderItem(line_number=line_number, product_code=item.product_code, sales_order_item_id=item.sales_order_item_id, part_name=item.part_name, part_no=item.part_no, description=item.description, quantity_grams=item.approved_quantity, unit=item.unit, received_quantity=Decimal("0"), unit_price=Decimal("0"), amount=Decimal("0"), remark=item.remark))
+            order.items.append(
+                PurchaseOrderItem(
+                    line_number=line_number,
+                    product_code=item.product_code,
+                    sales_order_item_id=item.sales_order_item_id,
+                    part_name=item.part_name,
+                    part_no=item.part_no,
+                    description=item.description,
+                    quantity_grams=item.approved_quantity,
+                    unit=item.unit,
+                    received_quantity=Decimal("0"),
+                    unit_price=Decimal("0"),
+                    amount=Decimal("0"),
+                    remark=item.remark,
+                )
+            )
             item.purchase_order_number = po_number
         db.add(order)
-    record.status = (PurchaseRequestStatus.approved if len(approved_items) == len(record.items) else PurchaseRequestStatus.partially_approved if approved_items else PurchaseRequestStatus.rejected)
-    record.reviewed_by = current_user.id; record.reviewed_at = now
+    record.status = (
+        PurchaseRequestStatus.approved
+        if len(approved_items) == len(record.items)
+        else PurchaseRequestStatus.partially_approved
+        if approved_items
+        else PurchaseRequestStatus.rejected
+    )
+    record.reviewed_by = current_user.id
+    record.reviewed_at = now
     if not approved_items:
         record.rejection_reason = "All requested items were rejected"
-    await db.commit(); return await response(db, await get_request(db, request_number), current_user)
+    await db.commit()
+    return await response(db, await get_request(db, request_number), current_user)
 
 
 @router.post("/{request_number}/reject", response_model=PurchaseRequestResponse)
-async def reject(request_number: str, data: PurchaseRequestRejection, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> PurchaseRequestResponse:
-    if not can_review(current_user): raise HTTPException(status_code=403, detail="Only Head Purchasing can review Purchase Requests")
+async def reject(
+    request_number: str,
+    data: PurchaseRequestRejection,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PurchaseRequestResponse:
+    if not can_review(current_user):
+        raise HTTPException(status_code=403, detail="Only Head Purchasing can review Purchase Requests")
     record = await get_request(db, request_number)
-    if record.status != PurchaseRequestStatus.waiting_review: raise HTTPException(status_code=409, detail="Purchase Request has already been reviewed")
+    if record.status != PurchaseRequestStatus.waiting_review:
+        raise HTTPException(status_code=409, detail="Purchase Request has already been reviewed")
     now = datetime.now(ZoneInfo(settings.business_timezone))
     for item in record.items:
         item.approval_status = PurchaseRequestItemApprovalStatus.rejected
@@ -403,4 +687,9 @@ async def reject(request_number: str, data: PurchaseRequestRejection, db: AsyncS
         item.review_reason = data.reason.strip()
         item.reviewed_by = current_user.id
         item.reviewed_at = now
-    record.status = PurchaseRequestStatus.rejected; record.reviewed_by = current_user.id; record.reviewed_at = now; record.rejection_reason = data.reason.strip(); await db.commit(); return await response(db, await get_request(db, request_number), current_user)
+    record.status = PurchaseRequestStatus.rejected
+    record.reviewed_by = current_user.id
+    record.reviewed_at = now
+    record.rejection_reason = data.reason.strip()
+    await db.commit()
+    return await response(db, await get_request(db, request_number), current_user)

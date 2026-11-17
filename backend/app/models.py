@@ -700,6 +700,9 @@ class PurchaseRequest(Base):
     __tablename__ = "purchase_requests"
 
     request_number: Mapped[str] = mapped_column(String(20), primary_key=True)
+    request_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="master_data", server_default="master_data"
+    )
     sales_order_number: Mapped[str | None] = mapped_column(
         ForeignKey("sales_orders.sales_order_number", ondelete="RESTRICT"), nullable=True, index=True
     )
@@ -743,8 +746,8 @@ class PurchaseRequestItem(Base):
         ForeignKey("purchase_requests.request_number", ondelete="CASCADE"), nullable=False, index=True
     )
     line_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    product_code: Mapped[str] = mapped_column(
-        ForeignKey("products.code", ondelete="RESTRICT"), nullable=False, index=True
+    product_code: Mapped[str | None] = mapped_column(
+        ForeignKey("products.code", ondelete="RESTRICT"), nullable=True, index=True
     )
     sales_order_item_id: Mapped[int | None] = mapped_column(
         ForeignKey("sales_order_items.id", ondelete="RESTRICT"), nullable=True, index=True

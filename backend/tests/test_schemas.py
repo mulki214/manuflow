@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.models import Gender
-from app.schemas import UserCreate
+from app.schemas import PurchaseRequestCreate, PurchaseRequestItemInput, UserCreate
 from app.services import format_user_id
 
 
@@ -44,3 +44,62 @@ def test_user_id_uses_date_and_three_digit_sequence() -> None:
 def test_user_id_rejects_sequence_over_daily_limit() -> None:
     with pytest.raises(ValueError):
         format_user_id(date(2026, 8, 8), 1000)
+
+
+def test_free_text_purchase_request_accepts_named_product_without_so_or_master_code() -> None:
+    request = PurchaseRequestCreate(
+        request_type="free_text",
+        request_date=date(2026, 11, 17),
+        requested_delivery_date=date(2026, 11, 24),
+        delivery_plant_code="PLANT",
+        items=[
+            PurchaseRequestItemInput(
+                part_name="Custom tooling",
+                part_no="TOOL-01",
+                description="Special fixture requested by maintenance",
+                quantity=2,
+                unit="pcs",
+            )
+        ],
+    )
+
+    assert request.sales_order_number is None
+    assert request.items[0].product_code is None
+    assert request.items[0].part_name == "Custom tooling"
+
+
+def test_free_text_purchase_request_requires_name_and_rejects_master_product_code() -> None:
+    common = {
+        "request_type": "free_text",
+        "request_date": date(2026, 11, 17),
+        "requested_delivery_date": date(2026, 11, 24),
+        "delivery_plant_code": "PLANT",
+    }
+    with pytest.raises(ValidationError):
+        PurchaseRequestCreate(
+            **common,
+            items=[PurchaseRequestItemInput(quantity=1, unit="pcs")],
+        )
+    with pytest.raises(ValidationError):
+        PurchaseRequestCreate(
+            **common,
+            items=[
+                PurchaseRequestItemInput(
+                    product_code="P-001",
+                    part_name="Should not mix types",
+                    quantity=1,
+                    unit="pcs",
+                )
+            ],
+        )
+
+
+def test_master_data_purchase_request_still_requires_product_code() -> None:
+    with pytest.raises(ValidationError):
+        PurchaseRequestCreate(
+            request_date=date(2026, 11, 17),
+            requested_delivery_date=date(2026, 11, 24),
+            delivery_plant_code="PLANT",
+            sales_order_number="SO-171126-001",
+            items=[PurchaseRequestItemInput(quantity=1, unit="pcs")],
+        )
